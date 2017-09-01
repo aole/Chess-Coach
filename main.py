@@ -1,6 +1,9 @@
 '''
 Requires python-chess
 Needs stockfish.exe, games.pgn, book.bin on path
+
+changes
+display flipped board for black
 '''
 
 import chess.pgn
@@ -18,7 +21,26 @@ def getnextgame(ofst):
 		pgn.seek(index)
 		game = chess.pgn.read_game(pgn)
 		result = game.headers["Result"]
+	print('PlyCount:', game.headers['PlyCount'])
 	return game, result
+
+openingnames = open("ecoe.pgn")
+def getOpeningName(san):
+	openingnames.seek(0)
+	game = chess.pgn.read_game(openingnames)
+	while game is not None:
+		opbrd = game.board()
+		line = opbrd.variation_san(game.main_line())
+		if san==line:
+			break
+		game = chess.pgn.read_game(openingnames)
+		
+	if game==None:
+		return ''
+		
+	blkname = game.headers['Black']
+	name = (' (' + blkname + ')') if blkname!='?' else ''
+	return game.headers['White'] + name
 
 print('opening book...')
 book = chess.polyglot.open_reader("book.bin")
@@ -44,13 +66,18 @@ totalmoves=0
 correctmoves=0
 totaldiff=0
 thinktime = 5000
+constboard = chess.Board()
+
 print('start shadowing game...')
 while not node.is_end():
 	next_node = node.variations[0]
 	next_move = node.board().san(next_node.move)
 	if winner==node.board().turn:
 		book_moves = [x.move() for x in book.find_all(node.board())]
-		print(node.board())
+		if node.board().turn:
+			print(node.board())
+		else:
+			print(str(node.board())[::-1])
 		user_move = None
 		book_move = False
 		while not user_move:
@@ -65,7 +92,11 @@ while not node.is_end():
 				
 		correct = False
 		if user_move in book_moves:
-			print('** you made a book move.')
+			brd = node.board()
+			brd.push(user_move)
+			openingname = getOpeningName(constboard.variation_san(brd.move_stack))
+			brd.pop()
+			print('** you made a book move:', openingname)
 			book_move = True
 			correct = True
 			correctmoves += 1
@@ -77,7 +108,6 @@ while not node.is_end():
 			correct = True
 			correctmoves += 1
 		else:
-			print('** you made a different move from the game:', next_move)
 			if not book_move:
 				# evaluate user move
 				print('** evaluating your move', res, '...')
@@ -88,6 +118,13 @@ while not node.is_end():
 				print('Your move PV:', brd.variation_san(info_handler.info["pv"][1]))
 				brd.pop()
 				user_score = info_handler.info["score"][1][0]
+			else:
+				brd = node.board()
+				brd.push(next_node.move)
+				openingname = getOpeningName(constboard.variation_san(brd.move_stack))
+				brd.pop()
+			print('** you made a different move from the game:', next_move+':'+openingname)
+				
 		node = next_node
 		if not correct:
 			print('** evaluating game move',next_move,'...')
@@ -101,8 +138,9 @@ while not node.is_end():
 			totaldiff += diff
 			print('Score:',diff , '('+str(user_score),'-',str(game_score)+')','total:',totaldiff)
 	else:
-		print('opponent move:', next_move)
 		node = next_node
+		openingname = getOpeningName(constboard.variation_san(node.board().move_stack))
+		print('opponent move:', next_move+":"+openingname)
 
 print(node.board())
 print('** game ended!', result)
