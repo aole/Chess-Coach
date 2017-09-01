@@ -1,6 +1,6 @@
 '''
 Requires python-chess
-Needs stockfish.exe	and fics.pgn on path
+Needs stockfish.exe, games.pgn, book.bin on path
 '''
 
 import chess.pgn
@@ -21,10 +21,10 @@ def getnextgame(ofst):
 	return game, result
 
 print('opening book...')
-book = chess.polyglot.open_reader("gm2001.bin")
+book = chess.polyglot.open_reader("book.bin")
 
 print('opening games...')
-pgn = open("C:/Users/baole/Downloads/fics.pgn")
+pgn = open("games.pgn")
 offset = (x for x in chess.pgn.scan_offsets(pgn))
 
 print('finding game to shadow...')
