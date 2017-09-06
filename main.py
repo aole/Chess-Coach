@@ -11,6 +11,117 @@ import random
 import chess.uci
 import chess.polyglot
 
+import sys
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel
+from PyQt5.QtGui import QPixmap, QDrag
+from PyQt5.QtCore import Qt, QMimeData
+
+ranks = ['1','2','3','4','5','6','7','8']
+files = ['a','b','c','d','e','f','g','h']
+rank1=0
+rank4=3
+filea=0
+filed=3
+
+class Piece(QLabel):
+	rank = file = 0
+	
+	def __init__(self, text, parent):
+		super().__init__(text, parent)
+		self.parent = parent
+		pixmap = QPixmap('piece.jpg')
+		self.setPixmap(pixmap)
+
+	def mousePressEvent(self, e):
+		self.__mousePressPos = None
+		self.__mouseMovePos = None
+		self.__mousePressPos = e.globalPos()
+		self.__mouseMovePos = e.globalPos()
+
+		super().mousePressEvent(e)
+
+	def mouseMoveEvent(self, e):
+		# adjust offset from clicked point to origin of widget
+		currPos = self.mapToGlobal(self.pos())
+		globalPos = e.globalPos()
+		diff = globalPos - self.__mouseMovePos
+		newPos = self.mapFromGlobal(currPos + diff)
+		self.move(newPos)
+
+		self.__mouseMovePos = globalPos
+
+		super().mouseMoveEvent(e)
+
+	def mouseReleaseEvent(self, e):
+		if self.__mousePressPos is not None:
+			moved = e.globalPos() - self.__mousePressPos 
+			if moved.manhattanLength() > 3:
+				try:
+					self.parent.drop(self, e.pos()+self.pos())
+				except Exception as ex:
+					print(ex)
+				e.ignore()
+				return
+				
+		super().mouseReleaseEvent(e)
+
+class App(QWidget):
+	# board dimension in pixels
+	bpx = 800
+	bpy = 800
+	# margin
+	mx = my = 20
+	# cell size
+	cx = (bpx-mx*2)/8
+	cy = (bpy-my*2)/8
+	
+	def __init__(self):
+		super().__init__()
+		self.init_ui()
+	
+	def init_ui(self):
+		label = QLabel(self)
+		pixmap = QPixmap('test.jpg')
+		label.setPixmap(pixmap)
+		
+		self.piece = Piece('text', self)
+		self.place_piece(self.piece, rank4, filed)
+		
+		self.resize(self.bpx, self.bpy)
+		self.setWindowTitle('Oracle')
+		self.show()
+	
+	def drop(self, piece, pos):
+		x = int((pos.x()-self.mx) / self.cx)
+		if x<0:
+			x=0
+		if x>7:
+			x=7
+		x *= self.cx
+		y = int((pos.y()-self.my) / self.cy)
+		if y<0:
+			y=0
+		if y>7:
+			y=7
+		y *= self.cy
+		piece.move(x+self.mx, y+self.my)
+		print(self.piece_location(piece))
+	
+	def place_piece(self, piece, rank, file):
+		x = file * self.cx + self.mx
+		y = (7-rank) * self.cy + self.my
+		piece.move(x, y)
+
+	def piece_location(self, piece):
+		x = int((piece.pos().x()-self.mx) / self.cx)
+		y = int((piece.pos().y()-self.my) / self.cy)
+		return files[x], ranks[7-y]
+		
+if __name__ == '__main__':
+	app = QApplication(sys.argv)
+	window = App()
+	sys.exit(app.exec_())
+
 def getnextgame(ofst):
 	rnd = random.randrange(100)
 	result = '1/2-1/2'
@@ -20,8 +131,8 @@ def getnextgame(ofst):
 			index = next(ofst)
 		pgn.seek(index)
 		game = chess.pgn.read_game(pgn)
-		result = game.headers["Result"]
-	print('PlyCount:', game.headers['PlyCount'])
+		result = game.headers["Result"] if int(game.headers['PlyCount'])>10 else '1/2-1/2'		
+	print('PlyCount:', game.headers['PlyCount'], 'Result:', result)
 	return game, result
 
 openingnames = open("ecoe.pgn")
@@ -67,6 +178,7 @@ correctmoves=0
 totaldiff=0
 thinktime = 5000
 constboard = chess.Board()
+exit_game = False
 
 print('start shadowing game...')
 while not node.is_end():
@@ -83,13 +195,19 @@ while not node.is_end():
 		while not user_move:
 			print('your move> ', end='')
 			res = input()
+			if res=='exit':
+				exit_game = True
+				break
 			try:
 				user_move = node.board().parse_san(res)
 			except ValueError:
 				user_move = None
 			if not user_move:
 				print('** illegal move:', res)
-				
+		
+		if exit_game:
+			break
+			
 		correct = False
 		if user_move in book_moves:
 			brd = node.board()
