@@ -12,79 +12,105 @@ import chess.uci
 import chess.polyglot
 
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QFrame, QAction, QMainWindow
-from PyQt5.QtGui import QPixmap, QDrag
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QFrame, QAction, QMainWindow, QPushButton
+from PyQt5.QtWidgets import QTabWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QListWidget, QListWidgetItem
+from PyQt5.QtGui import QPixmap, QDrag, QPainter, QPaintEvent
 from PyQt5.QtCore import Qt, QMimeData, QSize
 
-rank1=0
-rank4=3
-filea=0
-filed=3
-filee=4
-
-class Piece(QLabel):
-	rank = file = 0
+class QGame(QWidget):
+	from_square = -1
+	mouseMovePos = None
+	offsetx = offsety = 0
 	
-	def __init__(self, text, parent):
-		super().__init__(text, parent)
-		self.parent = parent
-		#self.setFrameShape(QFrame.Panel)
-		#self.setLineWidth(1)
-		self.setAlignment(Qt.AlignCenter)
-		#self.pixmap = QPixmap('piece.png')
-		#self.setPixmap(self.pixmap)
-
+	def __init__(self, parent, game):
+		super().__init__(parent)
+		
+		self.piece_refs = []
+		self.pixmap = QPixmap('test.jpg')
+		self.game = game
+		self.board = game.board()
+		#moves = game.main_line()
+		#print(self.board.variation_san(moves))
+		
+	def paintEvent(self, e):
+		w = self.width()
+		h = self.height()
+		self.cx = w/8
+		self.cy = h/8
+		
+		painter = QPainter(self)
+		painter.drawPixmap(0,0, w, h, self.pixmap)
+		try:
+			self.setup_board(self.board, w, h)
+		except Exception as ex:
+			print(ex)
+		
+	def setup_board(self, board, w, h):
+		for pc in self.piece_refs:
+			pc.setParent(None)
+		self.piece_refs.clear()
+		painter = QPainter(self)
+		for s in chess.SQUARES:
+			p = board.piece_at(s)
+			if p:
+				if s==self.from_square and self.mouseMovePos:
+					x = self.mouseMovePos.x()-self.offsetx
+					y = self.mouseMovePos.y()-self.offsety
+				else:
+					x = self.cx * chess.square_file(s)
+					y = self.cy * (7-chess.square_rank(s))
+				sym = p.unicode_symbol()
+				painter.drawText(x,y,self.cx,self.cy,Qt.AlignCenter, sym)
+		
 	def mousePressEvent(self, e):
-		self.__mousePressPos = None
-		self.__mouseMovePos = None
-		self.__mousePressPos = e.globalPos()
-		self.__mouseMovePos = e.globalPos()
-
+		self.mouseMovePos = e.pos()
+		x = int(e.pos().x() / self.cx)
+		self.offsetx = e.pos().x() - x*self.cx
+		y = int(e.pos().y() / self.cy)
+		self.offsety = e.pos().y() - y*self.cy
+		y = 7-y
+		self.from_square = y*8+x if y>=0 and y<8 and x>=0 and x<8 else -1
+		p = self.board.piece_at(self.from_square)
+		
 		super().mousePressEvent(e)
+		self.update()
+		
 
 	def mouseMoveEvent(self, e):
-		# adjust offset from clicked point to origin of widget
-		currPos = self.mapToGlobal(self.pos())
-		globalPos = e.globalPos()
-		diff = globalPos - self.__mouseMovePos
-		newPos = self.mapFromGlobal(currPos + diff)
-		self.move(newPos)
-
-		self.__mouseMovePos = globalPos
-
+		self.mouseMovePos = e.pos()
+		
 		super().mouseMoveEvent(e)
+		self.update()
 
 	def mouseReleaseEvent(self, e):
-		if self.__mousePressPos is not None:
-			moved = e.globalPos() - self.__mousePressPos 
-			if moved.manhattanLength() > 3:
-				try:
-					self.parent.drop(self, e.pos()+self.pos())
-				except Exception as ex:
-					print(ex)
-				e.ignore()
-				return
-				
-		super().mouseReleaseEvent(e)
+		if self.from_square>=0:
+			x = int(e.pos().x() / self.cx)
+			y = int(8-e.pos().y() / self.cy)
+			
+			if y>=0 and y<8 and x>=0 and x<8:
+				ucimove = chess.FILE_NAMES[chess.square_file(self.from_square)]+\
+					chess.RANK_NAMES[chess.square_rank(self.from_square)]+\
+					chess.FILE_NAMES[x]+\
+					chess.RANK_NAMES[y]
+				self.parent().user_move(self, ucimove)
 
-	def scale(self, sx, sy):
-		self.resize( sx, sy )
-		#self.pixmap = self.pixmap.scaled(QSize(sx,sy),Qt.KeepAspectRatio)
-		#self.setPixmap(self.pixmap)
-	
+		super().mouseReleaseEvent(e)
+		self.from_square = -1
+		self.update()
+
+class Game(QListWidgetItem):
+	def __init__(self, offset, header):
+		super().__init__(header['White']+' vs '+header['Black']+' ['+header['Result']+']')
+		self.offset = offset
+		self.header = header
+
 class App(QMainWindow):
 	# board dimension in pixels
 	bpx = 800
 	bpy = 800
-	# margin
-	mx = my = 20
-	# cell size
-	cx = (bpx-mx*2)/8
-	cy = (bpy-my*2)/8
 	
 	def __init__(self):
 		super().__init__()
-		self.piece_refs = []
 		self.init_ui()
 	
 	def init_ui(self):
@@ -97,77 +123,52 @@ class App(QMainWindow):
 		mm = self.menuBar()
 		fm = mm.addMenu('&File')
 		fm.addAction(act)
-		'''
-		label = QLabel(self)
-		pixmap = QPixmap('test.jpg')
-		label.setPixmap(pixmap)
-		'''
+		
 		self.board = chess.Board()
-		#self.setup_board(self.board)
+		#self.qboard = QBoard(self, pixmap, self.board)
+		#self.setCentralWidget(self.qboard)
+		self.games_list = QListWidget()
+		self.games_list.itemDoubleClicked.connect(self.on_game_create)
+		
+		self.tabs = QTabWidget()
+		self.tabs.addTab(self.games_list, "List")
+		self.setCentralWidget(self.tabs)
 		
 		self.resize(self.bpx, self.bpy)
 		self.setWindowTitle('Oracle')
 		self.show()
 	
-	def shadow(self):
-		print('shadow')
-		
-	def setup_board(self, board):
-		for pc in self.piece_refs:
-			pc.setParent(None)
-		self.piece_refs.clear()
-		for s in chess.SQUARES:
-			p = board.piece_at(s)
-			if p:
-				sym = p.unicode_symbol()
-				piece = Piece(sym, self)
-				piece.scale(self.cx, self.cy)
-				self.place_piece(piece, chess.square_rank(s), chess.square_file(s))
-				self.piece_refs.append(piece)
-				piece.show()
-		
-	def drop(self, piece, pos):
-		x = int((pos.x()-self.mx) / self.cx)
-		if x<0:
-			x=0
-		if x>7:
-			x=7
-		file = x
-		y = int((pos.y()-self.my) / self.cy)
-		if y<0:
-			y=0
-		if y>7:
-			y=7
-		rank = 7-y
-		
-		ucimove = chess.FILE_NAMES[piece.file]+\
-			chess.RANK_NAMES[piece.rank]+\
-			chess.FILE_NAMES[file]+\
-			chess.RANK_NAMES[rank]
-		move = chess.Move.from_uci(ucimove)
-		if move in self.board.legal_moves:
-			self.board.push(move)
-		print(self.board)
-		self.setup_board(self.board)
-		self.update()
-		'''
-		x *= self.cx
-		y *= self.cy
-		piece.move(x+self.mx, y+self.my)
-		'''
-		
-	def place_piece(self, piece, rank, file):
-		piece.rank = rank
-		piece.file = file
-		x = file * self.cx + self.mx
-		y = (7-rank) * self.cy + self.my
-		piece.move(x, y)
-
 	def piece_location(self, piece):
 		x = int((piece.pos().x()-self.mx) / self.cx)
 		y = int((piece.pos().y()-self.my) / self.cy)
 		return chess.FILE_NAMES[x], chess.RANK_NAMES[7-y]
 	
+	def user_move(self, brd, ucimove):
+		move = chess.Move.from_uci(ucimove)
+		if move in brd.board.legal_moves:
+			brd.board.push(move)
+		print(brd.board)
+		
+	def shadow(self):
+		try:
+			fileName, _ = QFileDialog.getOpenFileName(self, 'Get File',None,'PGN (*.pgn)')
+			if fileName:
+				count=1
+				self.pgn_file = open(fileName)
+				self.games_list.clear()
+				for offset, header in chess.pgn.scan_headers(self.pgn_file):
+					game = Game(offset, header)
+					self.games_list.addItem(game)
+					count += 1
+				self.update()
+		except Exception as ex:
+			print(ex)
+
+	def on_game_create(self, curr):
+		self.pgn_file.seek(curr.offset)
+		game = chess.pgn.read_game(self.pgn_file)
+		self.tabs.addTab(QGame(self, game), curr.text())
+
 if __name__ == '__main__':
 	app = QApplication(sys.argv)
 	window = App()
