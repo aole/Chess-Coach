@@ -1,15 +1,15 @@
 """
 Requires python-chess
 
-This: engine evaluation, book moves and opening names
+This: scoring
 
 TODO:
 	1. cache scaled images
 	2. flip board and drag
-	3. move to newly created tab
 	4. convert opening name games to positions
 	5. closable tabs
 	6. images in the middle of cells
+	7. look for game end
 """
 
 import sys
@@ -35,6 +35,7 @@ class QGame(QWidget):
 	winner = True
 	thread = None
 	engine_busy = False
+	total_score = 0
 
 	def __init__(self, parent, chess_game):
 		super().__init__(parent)
@@ -66,6 +67,8 @@ class QGame(QWidget):
 			self.winner = False
 
 		self.can_move = self.board.turn==self.winner
+		if not self.can_move:
+			self.make_move(self.get_next_game_move())
 
 	# moves = game.main_line()
 	# print(self.board.variation_san(moves))
@@ -150,7 +153,7 @@ class QGame(QWidget):
 		if move in self.board.legal_moves:
 			#self.parent.add_message('You made the move: ' + self.board.san(move))
 			self.compare_user_move_with_game(move)
-			# make losers move
+			# make opponents move
 			if not self.can_move:
 				# make the next game move as well
 				self.make_move(self.get_next_game_move())
@@ -161,29 +164,35 @@ class QGame(QWidget):
 		return next_node.move
 
 	def compare_user_move_with_game(self, move):
-		self.make_move(move)
-		next_move = self.get_next_game_move()
-		if move==next_move:
-			self.parent.add_message('You made the same move as the game.')
-		else:
-			self.parent.add_message('You made a different move from the game.')
-			self.board.pop()
-			self.make_move(next_move)
+		game_move = self.get_next_game_move()
+		move_text = self.board.san(move)
+		self.parent.add_message('Your move: '+move_text+', Game move: '+self.board.san(game_move))
+		is_book_move = self.parent.is_book_move(self.board, move)
+		if is_book_move:
+			opening_name = self.parent.get_opening_name(self.board)
+			self.parent.add_message(move_text+' (Book move '+opening_name+')')
+		if move!=game_move and not is_book_move:
+			board_copy = self.board.copy()
+			self.thread = Thread(target=self.evaluate_moves, args=(board_copy, move, game_move))
+			self.thread.start()
+		self.make_move(game_move)
 
 	def make_move(self, move):
-		move_text = self.board.san(move)
-		is_book_move = self.parent.is_book_move(self.board, move)
 		self.board.push(move)
 		self.can_move = self.board.turn==self.winner
 
-		if is_book_move:
-			opening_name = self.parent.get_opening_name(self.board)
-			self.parent.add_message('Move made: '+move_text+' (Book move '+opening_name+')')
-		else:
-			self.parent.add_message('Move made: '+move_text+' (novelty)')
-			board_copy = self.board.copy()
-			self.thread = Thread(target=self.evaluate, args=(board_copy, move_text))
-			self.thread.start()
+	def evaluate_moves(self, board, user_move, game_move):
+		# evaluate move score
+		while self.engine_busy:
+			pass
+		self.engine_busy = True
+		evaluation = self.parent.evaluate_moves(board, [user_move, game_move])
+		score_diff = evaluation[user_move] - evaluation[game_move]
+		self.parent.add_message('Move score ('+board.san(user_move)+' vs '+board.san(game_move)+'): '+ str(score_diff))
+		self.total_score += score_diff
+		self.parent.add_message('Game score: '+ str(self.total_score))
+		
+		self.engine_busy = False
 
 	def evaluate(self, board, move):
 		# evaluate move score
@@ -199,7 +208,6 @@ class GameListItem(QListWidgetItem):
 		super().__init__(pgn_header['White'] + ' vs ' + pgn_header['Black'] + ' [' + pgn_header['Result'] + ']')
 		self.offset = pgn_offset
 		self.header = pgn_header
-
 
 class App(QMainWindow):
 	# board dimension in pixels
@@ -274,7 +282,7 @@ class App(QMainWindow):
 
 		self.setCentralWidget(main_widget)
 
-		self.resize(self.bpx, self.bpy)
+		#self.resize(self.bpx, self.bpy)
 		self.setWindowTitle('Oracle')
 		self.show()
 
@@ -303,15 +311,28 @@ class App(QMainWindow):
 		self.pgn_file.seek(selected_item.offset)
 		selected_game = chess.pgn.read_game(self.pgn_file)
 		self.tabs.addTab(QGame(self, selected_game), selected_item.text())
+		# open the latest tab
+		self.tabs.setCurrentIndex(self.tabs.count()-1)
 
 	def add_message(self, msg):
-		self.msg_list.addItem(msg)
+		#self.msg_list.addItem(msg)
+		self.msg_list.insertItem(0, msg)
 
 	def evaluate_board(self, board):
+		self.engine.setoption({"MultiPV":1})
 		self.engine.position(board)
 		self.engine.go(movetime=5000)
-		#print('Your move PV:', brd.variation_san(info_handler.info["pv"][1]))
 		return self.info_handler.info["score"][1][0]
+
+	def evaluate_moves(self, board, moves_list):
+		self.engine.setoption({"MultiPV":len(moves_list)})
+		self.engine.position(board)
+		self.engine.go(movetime=5000, searchmoves=moves_list)
+		
+		moves_score = {}
+		for i in range(1, len(self.info_handler.info['pv'])+1):
+			moves_score[self.info_handler.info['pv'][i][0]]=self.info_handler.info['score'][i][0]
+		return moves_score
 
 	def closeEvent(self, e):
 		print('... quitting!')
