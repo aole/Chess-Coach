@@ -6,8 +6,26 @@ App
         each game tab is a QGame object
     shows messages
     evaluate board position
+	check if book move
+	return opening name
 QGame
     has chess.Game object
     is also the board gui
-    handles piece drags and does move
+    handles piece drags and process user move
     pass messages to the App
+
+Process user move
+	return is move not legal
+	# compare with game move
+	get the next game move
+	make user move
+		if book move
+			get opening name
+		else evaluate
+	if user move is different from game move
+		undo user move
+		make game move
+			evaluate
+	if oppo move
+		get next game move
+		make the game move
