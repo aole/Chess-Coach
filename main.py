@@ -283,7 +283,7 @@ class App(QMainWindow):
 		self.setCentralWidget(main_widget)
 
 		#self.resize(self.bpx, self.bpy)
-		self.setWindowTitle('Oracle')
+		self.setWindowTitle('Chess Coach')
 		self.show()
 
 	def piece_location(self, piece):
