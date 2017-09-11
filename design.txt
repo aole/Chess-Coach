@@ -1,0 +1,13 @@
+App
+    has list of games tab
+        each item in the list is a GameListItem
+        double click a GameListItem to open in a new game tab
+    has game tabs
+        each game tab is a QGame object
+    shows messages
+    evaluate board position
+QGame
+    has chess.Game object
+    is also the board gui
+    handles piece drags and does move
+    pass messages to the App
