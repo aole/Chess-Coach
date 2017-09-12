@@ -8,8 +8,10 @@ TODO:
 	2. flip board and drag
 	4. convert opening name games to positions
 	5. closable tabs
-	6. images in the middle of cells
+	6. center the images in the cells
 	7. look for game end
+	8. move arrow to show last move
+	9. add a move evaluation check list
 """
 
 import sys
@@ -20,7 +22,7 @@ import chess.polyglot
 import chess.uci
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QPainter, QImage
-from PyQt5.QtWidgets import QApplication, QWidget, QAction, QMainWindow, QVBoxLayout
+from PyQt5.QtWidgets import QApplication, QWidget, QAction, QMainWindow, QVBoxLayout, QHBoxLayout
 from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetItem
 
 PIECE_IMAGE_INDEX = [0, 5, 3, 2, 4, 1, 0]
@@ -274,18 +276,31 @@ class App(QMainWindow):
 		self.populate_game_list_from_pgn('games.pgn')
 
 		main_widget = QWidget()
-		layout = QVBoxLayout(main_widget)
+		main_layout = QHBoxLayout(main_widget)
+		
+		game_msg_widget = QWidget()
+		game_msg_layout = QVBoxLayout(game_msg_widget)
 
-		layout.addWidget(self.tabs, 2)
+		game_msg_layout.addWidget(self.tabs, 2)
 		self.msg_list = QListWidget()
-		layout.addWidget(self.msg_list)
+		game_msg_layout.addWidget(self.msg_list)
 
+		main_layout.addWidget(game_msg_widget, 2)
+		self.check_list = QListWidget()
+		self.populate_check_list()
+		main_layout.addWidget(self.check_list)
+		
 		self.setCentralWidget(main_widget)
 
 		#self.resize(self.bpx, self.bpy)
 		self.setWindowTitle('Chess Coach')
 		self.show()
 
+	def populate_check_list(self):
+		file = open('check_list.txt')
+		for line in file:
+			self.check_list.addItem(line.strip())
+			
 	def piece_location(self, piece):
 		x = int((piece.pos().x() - self.mx) / self.cx)
 		y = int((piece.pos().y() - self.my) / self.cy)
@@ -313,6 +328,7 @@ class App(QMainWindow):
 		self.tabs.addTab(QGame(self, selected_game), selected_item.text())
 		# open the latest tab
 		self.tabs.setCurrentIndex(self.tabs.count()-1)
+		self.add_message('Shadowing game: '+selected_item.text())
 
 	def add_message(self, msg):
 		#self.msg_list.addItem(msg)

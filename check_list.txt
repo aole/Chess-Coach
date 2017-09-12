@@ -1,0 +1,17 @@
+Search for all your checks and forcing moves
+Search for all opponencts checks and forcing moves
+Search for all captures and forcing moves for both sides
+Search for pins, forks and discoveries
+Your undefended pieces and can they be exploited
+Complete development
+King safety
+Opponents undefended pieces and can they be exploited
+Improve your pieces/position
+Weaken opponents pieces/position
+Look to create/avoid doubled pawns, backward pawns
+Play on side of the board where your pawns point to
+---- Situational ----
+Rooks on open file
+Connect the rooks
+Bishops on long diagonals
+Knights in the center
