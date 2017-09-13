@@ -1,17 +1,6 @@
 """
 Requires python-chess
 
-This: scoring
-
-TODO:
-	1. cache scaled images
-	2. flip board and drag
-	4. convert opening name games to positions
-	5. closable tabs
-	6. center the images in the cells
-	7. look for game end
-	8. move arrow to show last move
-	9. add a move evaluation check list
 """
 
 import sys
@@ -70,8 +59,12 @@ class QGame(QWidget):
 
 		self.can_move = self.board.turn==self.winner
 		if not self.can_move:
-			self.make_move(self.get_next_game_move())
-
+			game_move = self.get_next_game_move()
+			self.parent.add_message('Opponent move: ' + self.board.san(game_move))
+			self.make_move(game_move)
+			
+		self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
+		
 	# moves = game.main_line()
 	# print(self.board.variation_san(moves))
 
@@ -158,7 +151,10 @@ class QGame(QWidget):
 			# make opponents move
 			if not self.can_move:
 				# make the next game move as well
-				self.make_move(self.get_next_game_move())
+				game_move = self.get_next_game_move()
+				self.parent.add_message('Opponent move: ' + self.board.san(game_move))
+				self.make_move(game_move)
+				self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
 
 	def get_next_game_move(self):
 		next_node = self.node.variations[0]
@@ -299,7 +295,7 @@ class App(QMainWindow):
 	def populate_check_list(self):
 		file = open('check_list.txt')
 		for line in file:
-			self.check_list.addItem(line.strip())
+			self.check_list.addItem(line.rstrip())
 			
 	def piece_location(self, piece):
 		x = int((piece.pos().x() - self.mx) / self.cx)

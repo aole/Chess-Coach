@@ -1,3 +1,18 @@
+
+This: added check list
+
+TODO:
+	1. cache scaled images
+	2. flip board and drag
+	4. convert opening name games to positions
+	5. closable tabs
+	6. center the images in the cells
+	7. look for game end
+	8. show last move
+	9. board visualization exercises (click on given file/rank)
+   10. game in reverse
+   11. given moves, recreate position
+
 App
     has list of games tab
         each item in the list is a GameListItem
@@ -8,6 +23,7 @@ App
     evaluate board position
 	check if book move
 	return opening name
+
 QGame
     has chess.Game object
     is also the board gui
@@ -18,14 +34,11 @@ Process user move
 	return is move not legal
 	# compare with game move
 	get the next game move
-	make user move
 		if book move
 			get opening name
-		else evaluate
-	if user move is different from game move
-		undo user move
-		make game move
-			evaluate
+		else
+			evaluate both moves
+	make game move
 	if oppo move
 		get next game move
 		make the game move

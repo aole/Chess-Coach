@@ -3,6 +3,7 @@ Search for all opponencts checks and forcing moves
 Search for all captures and forcing moves for both sides
 Search for pins, forks and discoveries
 Your undefended pieces and can they be exploited
+	undefended pieces on the same diagonal/rank/file
 Complete development
 King safety
 Opponents undefended pieces and can they be exploited
