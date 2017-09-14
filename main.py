@@ -9,10 +9,10 @@ from threading import Thread
 import chess.pgn
 import chess.polyglot
 import chess.uci
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTime, QTimer
 from PyQt5.QtGui import QPixmap, QPainter, QImage
 from PyQt5.QtWidgets import QApplication, QWidget, QAction, QMainWindow, QVBoxLayout, QHBoxLayout
-from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetItem
+from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetItem, QLabel
 
 PIECE_IMAGE_INDEX = [0, 5, 3, 2, 4, 1, 0]
 
@@ -31,8 +31,10 @@ class QGame(QWidget):
 	def __init__(self, parent, chess_game):
 		super().__init__(parent)
 
+		self.lbltimer = QLabel('test', self)
+		
 		self.width = self.width()
-		self.height = self.height()
+		self.height = self.height() - self.lbltimer.height()
 		self.cx = self.width / 8
 		self.cy = self.height / 8
 
@@ -65,18 +67,24 @@ class QGame(QWidget):
 			
 		self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
 		
+		self.timer = QTime()
+		self.timer.start()
+		
 	# moves = game.main_line()
 	# print(self.board.variation_san(moves))
 
+	def elapsed(self):
+		return self.timer.elapsed()
+
 	def resizeEvent(self, e):
 		self.width = e.size().width()
-		self.height = e.size().height()
+		self.height = e.size().height() - self.lbltimer.height()
 		self.cx = self.width / 8
 		self.cy = self.height / 8
 
 	def paintEvent(self, e):
 		painter = QPainter(self)
-		painter.drawPixmap(0, 0, self.width, self.height, self.board_map)
+		painter.drawPixmap(0, self.lbltimer.height(), self.width, self.height, self.board_map)
 		try:
 			self.setup_board(self.board, False)
 		except Exception as ex:
@@ -89,10 +97,10 @@ class QGame(QWidget):
 			if p:
 				if s == self.from_square and self.mouseMovePos:
 					x = self.mouseMovePos.x() - self.offset_x
-					y = self.mouseMovePos.y() - self.offset_y
+					y = self.mouseMovePos.y() - self.offset_y + self.lbltimer.height()
 				else:
 					x = self.cx * ((7 - chess.square_file(s)) if flip else chess.square_file(s))
-					y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s)))
+					y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s))) + self.lbltimer.height()
 				if show_ascii:
 					sym = p.unicode_symbol()
 					painter.drawText(x,y,self.cx,self.cy,Qt.AlignCenter, sym)
@@ -106,7 +114,7 @@ class QGame(QWidget):
 			self.mouseMovePos = e.pos()
 			x = int(e.pos().x() / self.cx)
 			self.offset_x = e.pos().x() - x * self.cx
-			y = int(e.pos().y() / self.cy)
+			y = int((e.pos().y() - self.lbltimer.height()) / self.cy)
 			self.offset_y = e.pos().y() - y * self.cy
 			y = 7 - y
 			self.from_square = (y * 8 + x) if (0 <= y < 8 and 0 <= x < 8) else -1
@@ -155,6 +163,7 @@ class QGame(QWidget):
 				self.parent.add_message('Opponent move: ' + self.board.san(game_move))
 				self.make_move(game_move)
 				self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
+				self.timer.restart()
 
 	def get_next_game_move(self):
 		next_node = self.node.variations[0]
@@ -229,9 +238,22 @@ class App(QMainWindow):
 		self.engine = chess.uci.popen_engine("stockfish")
 		self.info_handler = chess.uci.InfoHandler()
 		self.engine.info_handlers.append(self.info_handler)
-
+		
 		self.add_message('Ready')
+
+		self.timer = QTimer()
+		self.timer.timeout.connect(self.tick)
+		self.timer.start(100)
 	
+	def tick(self):
+		tab = self.tabs.currentWidget()
+		try:
+			elapsed = tab.elapsed() / 1000
+			msg = "{:.2f}".format(elapsed)
+			self.statusBar().showMessage(msg)
+		except Exception as ex:
+			pass
+		
 	def init_openings(self):
 		opening_file = open("ecoe.pgn")
 		game = chess.pgn.read_game(opening_file)

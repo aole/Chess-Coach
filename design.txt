@@ -1,5 +1,5 @@
 
-This: added check list
+This: added move clock
 
 TODO:
 	1. cache scaled images
@@ -12,7 +12,9 @@ TODO:
 	9. board visualization exercises (click on given file/rank)
    10. game in reverse
    11. given moves, recreate position
-
+   12. play with indistinguisable pieces
+   13. play blind/partial blind
+   
 App
     has list of games tab
         each item in the list is a GameListItem
@@ -29,6 +31,7 @@ QGame
     is also the board gui
     handles piece drags and process user move
     pass messages to the App
+	has move timer
 
 Process user move
 	return is move not legal
