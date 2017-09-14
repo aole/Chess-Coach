@@ -1,5 +1,5 @@
 
-This: added move clock
+This: analyze board(1st pass), show move list
 
 TODO:
 	1. cache scaled images
@@ -14,14 +14,25 @@ TODO:
    11. given moves, recreate position
    12. play with indistinguisable pieces
    13. play blind/partial blind
-   
+   14. board from fen
+   15. analyse position
+   16. put some time gap between user move and system move
+
+Menu
+	File
+		Shadow...
+		Board from FEN...
+		Analyze position
+
 App
     has list of games tab
         each item in the list is a GameListItem
         double click a GameListItem to open in a new game tab
     has game tabs
         each game tab is a QGame object
-    shows messages
+    has message list (below the tabs)
+	has check list on the right
+	* has moves list above check list
     evaluate board position
 	check if book move
 	return opening name

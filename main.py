@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetIte
 
 PIECE_IMAGE_INDEX = [0, 5, 3, 2, 4, 1, 0]
 
+show_ascii = False
 show_ascii = True
 
 class QGame(QWidget):
@@ -25,7 +26,6 @@ class QGame(QWidget):
 	can_move = False
 	winner = True
 	thread = None
-	engine_busy = False
 	total_score = 0
 
 	def __init__(self, parent, chess_game):
@@ -64,6 +64,7 @@ class QGame(QWidget):
 			game_move = self.get_next_game_move()
 			self.parent.add_message('Opponent move: ' + self.board.san(game_move))
 			self.make_move(game_move)
+			parent.game_state_changed(self)
 			
 		self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
 		
@@ -131,7 +132,7 @@ class QGame(QWidget):
 	def mouseReleaseEvent(self, e):
 		if self.from_square >= 0:
 			x = int(e.pos().x() / self.cx)
-			y = int(8 - e.pos().y() / self.cy)
+			y = int(8 - (e.pos().y() - self.lbltimer.height()) / self.cy)
 
 			if 0 <= y < 8 and 0 <= x < 8:
 				uci_move = chess.FILE_NAMES[chess.square_file(self.from_square)] + \
@@ -164,6 +165,7 @@ class QGame(QWidget):
 				self.make_move(game_move)
 				self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
 				self.timer.restart()
+			self.parent.game_state_changed(self)
 
 	def get_next_game_move(self):
 		next_node = self.node.variations[0]
@@ -190,25 +192,16 @@ class QGame(QWidget):
 
 	def evaluate_moves(self, board, user_move, game_move):
 		# evaluate move score
-		while self.engine_busy:
-			pass
-		self.engine_busy = True
 		evaluation = self.parent.evaluate_moves(board, [user_move, game_move])
 		score_diff = evaluation[user_move] - evaluation[game_move]
 		self.parent.add_message('Move score ('+board.san(user_move)+' vs '+board.san(game_move)+'): '+ str(score_diff))
 		self.total_score += score_diff
 		self.parent.add_message('Game score: '+ str(self.total_score))
-		
-		self.engine_busy = False
 
 	def evaluate(self, board, move):
 		# evaluate move score
-		while self.engine_busy:
-			pass
-		self.engine_busy = True
 		evaluation = self.parent.evaluate_board(board)
 		self.parent.add_message('Position Evaluation ('+move+') '+str(evaluation))
-		self.engine_busy = False
 
 class GameListItem(QListWidgetItem):
 	def __init__(self, pgn_offset, pgn_header):
@@ -238,6 +231,7 @@ class App(QMainWindow):
 		self.engine = chess.uci.popen_engine("stockfish")
 		self.info_handler = chess.uci.InfoHandler()
 		self.engine.info_handlers.append(self.info_handler)
+		self.engine_busy = False
 		
 		self.add_message('Ready')
 
@@ -245,15 +239,6 @@ class App(QMainWindow):
 		self.timer.timeout.connect(self.tick)
 		self.timer.start(100)
 	
-	def tick(self):
-		tab = self.tabs.currentWidget()
-		try:
-			elapsed = tab.elapsed() / 1000
-			msg = "{:.2f}".format(elapsed)
-			self.statusBar().showMessage(msg)
-		except Exception as ex:
-			pass
-		
 	def init_openings(self):
 		opening_file = open("ecoe.pgn")
 		game = chess.pgn.read_game(opening_file)
@@ -278,17 +263,22 @@ class App(QMainWindow):
 		self.statusBar()
 		self.statusBar().showMessage('Ready')
 
-		act = QAction("shadow..", self)
-		act.triggered.connect(self.shadow)
-
 		mm = self.menuBar()
 		fm = mm.addMenu('&File')
+		
+		act = QAction("Shadow..", self)
+		act.triggered.connect(self.shadow)
+		fm.addAction(act)
+
+		act = QAction("Analyze", self)
+		act.triggered.connect(self.analyze)
 		fm.addAction(act)
 
 		self.games_list = QListWidget()
 		self.games_list.itemDoubleClicked.connect(self.on_list_dbl_click)
 
 		self.tabs = QTabWidget()
+		self.tabs.currentChanged.connect(self.tab_changed)
 		# self.tabs.setTabsClosable(True)
 		self.tabs.addTab(self.games_list, "List")
 		self.populate_game_list_from_pgn('games.pgn')
@@ -304,9 +294,18 @@ class App(QMainWindow):
 		game_msg_layout.addWidget(self.msg_list)
 
 		main_layout.addWidget(game_msg_widget, 2)
+		
+		moves_check_widget = QWidget()
+		moves_check_layout = QVBoxLayout(moves_check_widget)
+		
+		self.moves_list = QLabel()
+		moves_check_layout.addWidget(self.moves_list)
+		
 		self.check_list = QListWidget()
 		self.populate_check_list()
-		main_layout.addWidget(self.check_list)
+		moves_check_layout.addWidget(self.check_list, 2)
+		
+		main_layout.addWidget(moves_check_widget)
 		
 		self.setCentralWidget(main_widget)
 
@@ -314,6 +313,39 @@ class App(QMainWindow):
 		self.setWindowTitle('Chess Coach')
 		self.show()
 
+	def tab_changed(self, index):
+		tab = self.tabs.currentWidget()
+		if isinstance(tab, QGame):
+			self.game_state_changed(tab)
+			
+	def game_state_changed(self, qgame):
+		msg = self.static_board.variation_san(qgame.board.move_stack)
+		self.moves_list.setText(msg)
+
+	def analyze(self):
+		tab = self.tabs.currentWidget()
+		if isinstance(tab, QGame):
+			self.eval_msg = QListWidgetItem('Analyze Position:')
+			self.add_message(self.eval_msg)
+			board_copy = tab.board.copy()
+			self.thread = Thread(target=self.analyze_board, args=(board_copy,))
+			self.thread.start()
+	
+	def analyze_board(self, board):
+		msg = str(self.evaluate_board(board))
+		msg = '('+msg+') '+board.variation_san(self.info_handler.info['pv'][1])
+		self.eval_msg.setText('Analyze Position: '+msg)
+		self.msg_list.repaint()
+		
+	def tick(self):
+		tab = self.tabs.currentWidget()
+		try:
+			elapsed = tab.elapsed() / 1000
+			msg = "{:.2f}".format(elapsed)
+			self.statusBar().showMessage(msg)
+		except Exception as ex:
+			pass
+		
 	def populate_check_list(self):
 		file = open('check_list.txt')
 		for line in file:
@@ -353,19 +385,29 @@ class App(QMainWindow):
 		self.msg_list.insertItem(0, msg)
 
 	def evaluate_board(self, board):
+		# evaluate move score
+		while self.engine_busy:
+			pass
+		self.engine_busy = True
 		self.engine.setoption({"MultiPV":1})
 		self.engine.position(board)
-		self.engine.go(movetime=5000)
+		self.engine.go(movetime=1000)
+		self.engine_busy = False
 		return self.info_handler.info["score"][1][0]
 
 	def evaluate_moves(self, board, moves_list):
+		# evaluate move score
+		while self.engine_busy:
+			pass
+		self.engine_busy = True
 		self.engine.setoption({"MultiPV":len(moves_list)})
 		self.engine.position(board)
-		self.engine.go(movetime=5000, searchmoves=moves_list)
+		self.engine.go(movetime=1000, searchmoves=moves_list)
 		
 		moves_score = {}
 		for i in range(1, len(self.info_handler.info['pv'])+1):
 			moves_score[self.info_handler.info['pv'][i][0]]=self.info_handler.info['score'][i][0]
+		self.engine_busy = False
 		return moves_score
 
 	def closeEvent(self, e):
