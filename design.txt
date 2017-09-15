@@ -1,11 +1,9 @@
 
-This: analyze board(1st pass), show move list
+This: closable tabs, flip board and correct drag
 
 TODO:
 	1. cache scaled images
-	2. flip board and drag
 	4. convert opening name games to positions
-	5. closable tabs
 	6. center the images in the cells
 	7. look for game end
 	8. show last move
@@ -17,7 +15,8 @@ TODO:
    14. board from fen
    15. analyse position
    16. put some time gap between user move and system move
-
+   17. maximize board display toggle
+   
 Menu
 	File
 		Shadow...

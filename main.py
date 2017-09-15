@@ -20,6 +20,9 @@ show_ascii = False
 show_ascii = True
 
 class QGame(QWidget):
+	# widget type
+	# SHADOW = range(2)
+	
 	from_square = -1
 	mouseMovePos = None
 	offset_x = offset_y = 0
@@ -28,10 +31,10 @@ class QGame(QWidget):
 	thread = None
 	total_score = 0
 
-	def __init__(self, parent, chess_game):
+	def __init__(self, parent, chess_game, caption):
 		super().__init__(parent)
 
-		self.lbltimer = QLabel('test', self)
+		self.lbltimer = QLabel(caption, self)
 		
 		self.width = self.width()
 		self.height = self.height() - self.lbltimer.height()
@@ -56,9 +59,11 @@ class QGame(QWidget):
 		self.board = chess_game.board()
 
 		result = chess_game.headers['Result']
+		self.flip_board = False
 		if result =='0-1':
 			self.winner = False
-
+			self.flip_board = True
+			
 		self.can_move = self.board.turn==self.winner
 		if not self.can_move:
 			game_move = self.get_next_game_move()
@@ -87,11 +92,11 @@ class QGame(QWidget):
 		painter = QPainter(self)
 		painter.drawPixmap(0, self.lbltimer.height(), self.width, self.height, self.board_map)
 		try:
-			self.setup_board(self.board, False)
+			self.display_board(self.board, self.flip_board)
 		except Exception as ex:
 			print(ex)
 
-	def setup_board(self, board, flip):
+	def display_board(self, board, flip):
 		painter = QPainter(self)
 		for s in chess.SQUARES:
 			p = board.piece_at(s)
@@ -102,6 +107,7 @@ class QGame(QWidget):
 				else:
 					x = self.cx * ((7 - chess.square_file(s)) if flip else chess.square_file(s))
 					y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s))) + self.lbltimer.height()
+
 				if show_ascii:
 					sym = p.unicode_symbol()
 					painter.drawText(x,y,self.cx,self.cy,Qt.AlignCenter, sym)
@@ -113,11 +119,15 @@ class QGame(QWidget):
 	def mousePressEvent(self, e):
 		if self.can_move:
 			self.mouseMovePos = e.pos()
+			
 			x = int(e.pos().x() / self.cx)
 			self.offset_x = e.pos().x() - x * self.cx
+			x = 7-x if self.flip_board else x
+			
 			y = int((e.pos().y() - self.lbltimer.height()) / self.cy)
 			self.offset_y = e.pos().y() - y * self.cy
-			y = 7 - y
+			y = y if self.flip_board else 7 - y
+			
 			self.from_square = (y * 8 + x) if (0 <= y < 8 and 0 <= x < 8) else -1
 
 		super().mousePressEvent(e)
@@ -132,8 +142,9 @@ class QGame(QWidget):
 	def mouseReleaseEvent(self, e):
 		if self.from_square >= 0:
 			x = int(e.pos().x() / self.cx)
+			x = 7-x if self.flip_board else x
 			y = int(8 - (e.pos().y() - self.lbltimer.height()) / self.cy)
-
+			y = 7 - y if self.flip_board else y
 			if 0 <= y < 8 and 0 <= x < 8:
 				uci_move = chess.FILE_NAMES[chess.square_file(self.from_square)] + \
 						   chess.RANK_NAMES[chess.square_rank(self.from_square)] + \
@@ -237,7 +248,7 @@ class App(QMainWindow):
 
 		self.timer = QTimer()
 		self.timer.timeout.connect(self.tick)
-		self.timer.start(100)
+		self.timer.start(200)
 	
 	def init_openings(self):
 		opening_file = open("ecoe.pgn")
@@ -277,9 +288,13 @@ class App(QMainWindow):
 		self.games_list = QListWidget()
 		self.games_list.itemDoubleClicked.connect(self.on_list_dbl_click)
 
+		# tabs
 		self.tabs = QTabWidget()
+		self.tabs.setTabsClosable(True)
+		
 		self.tabs.currentChanged.connect(self.tab_changed)
-		# self.tabs.setTabsClosable(True)
+		self.tabs.tabCloseRequested.connect(self.close_tab)
+		
 		self.tabs.addTab(self.games_list, "List")
 		self.populate_game_list_from_pgn('games.pgn')
 
@@ -299,6 +314,7 @@ class App(QMainWindow):
 		moves_check_layout = QVBoxLayout(moves_check_widget)
 		
 		self.moves_list = QLabel()
+		self.moves_list.setWordWrap(True)
 		moves_check_layout.addWidget(self.moves_list)
 		
 		self.check_list = QListWidget()
@@ -318,6 +334,11 @@ class App(QMainWindow):
 		if isinstance(tab, QGame):
 			self.game_state_changed(tab)
 			
+	def close_tab(self, index):
+		tab = self.tabs.currentWidget()
+		if isinstance(tab, QGame):
+			self.tabs.removeTab(index)
+
 	def game_state_changed(self, qgame):
 		msg = self.static_board.variation_san(qgame.board.move_stack)
 		self.moves_list.setText(msg)
@@ -341,7 +362,13 @@ class App(QMainWindow):
 		tab = self.tabs.currentWidget()
 		try:
 			elapsed = tab.elapsed() / 1000
-			msg = "{:.2f}".format(elapsed)
+			seconds = int(elapsed)
+			minutes = seconds/60.0
+			seconds = seconds % 60
+			hours = minutes/60.0
+			minutes = minutes%60
+			#msg = "{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds)
+			msg = "%02d:%02d:%02d" % (hours, minutes, seconds)
 			self.statusBar().showMessage(msg)
 		except Exception as ex:
 			pass
@@ -375,7 +402,8 @@ class App(QMainWindow):
 	def on_list_dbl_click(self, selected_item):
 		self.pgn_file.seek(selected_item.offset)
 		selected_game = chess.pgn.read_game(self.pgn_file)
-		self.tabs.addTab(QGame(self, selected_game), selected_item.text())
+		tab_caption = selected_item.text()[:7]+'...'
+		self.tabs.addTab(QGame(self, selected_game, selected_item.text()), tab_caption)
 		# open the latest tab
 		self.tabs.setCurrentIndex(self.tabs.count()-1)
 		self.add_message('Shadowing game: '+selected_item.text())
