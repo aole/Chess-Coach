@@ -1,21 +1,23 @@
+Design and TODOs
+================
 
-This: closable tabs, flip board and correct drag
+This: center images, show last move, another screenshot
 
 TODO:
 	1. cache scaled images
 	4. convert opening name games to positions
-	6. center the images in the cells
 	7. look for game end
-	8. show last move
 	9. board visualization exercises (click on given file/rank)
    10. game in reverse
    11. given moves, recreate position
-   12. play with indistinguisable pieces
+   12. play with indistinguishable pieces
    13. play blind/partial blind
    14. board from fen
    15. analyse position
    16. put some time gap between user move and system move
    17. maximize board display toggle
+   18. game controls
+   19. move list label expands after 4/5 lines
    
 Menu
 	File
@@ -52,6 +54,6 @@ Process user move
 		else
 			evaluate both moves
 	make game move
-	if oppo move
+	if opponent move
 		get next game move
 		make the game move
