@@ -1,7 +1,7 @@
 Design and TODOs
 ================
 
-This: center images, show last move, another screenshot
+This: 
 
 TODO:
 	1. cache scaled images
@@ -13,7 +13,6 @@ TODO:
    12. play with indistinguishable pieces
    13. play blind/partial blind
    14. board from fen
-   15. analyse position
    16. put some time gap between user move and system move
    17. maximize board display toggle
    18. game controls

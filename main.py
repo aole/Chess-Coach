@@ -16,8 +16,8 @@ from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetIte
 
 PIECE_IMAGE_INDEX = [0, 5, 3, 2, 4, 1, 0]
 
-show_ascii = True
 show_ascii = False
+show_ascii = True
 
 class QGame(QWidget):
     # widget type
