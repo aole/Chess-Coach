@@ -4,6 +4,7 @@ Requires python-chess
 """
 
 import sys
+import os
 
 from threading import Thread
 import chess.pgn
@@ -31,9 +32,11 @@ class QGame(QWidget):
     thread = None
     total_score = 0
 
-    def __init__(self, parent, chess_game, caption):
+    def __init__(self, parent, chess_game=None, caption=None):
         super().__init__(parent)
 
+        if caption==None:
+            caption = 'Game Editor'
         self.label_caption = QLabel(caption, self)
 
         self.width = self.width()
@@ -54,6 +57,12 @@ class QGame(QWidget):
             for x in range(6):
                 self.piece_map.append(temp_map.copy(int(x * pcx), int(y * pcy), int(pcx), int(pcy)))
 
+        if chess_game==None:
+            chess_game = chess.pgn.Game()
+            self.board_type = 1
+        else:
+            self.board_type = 2
+            
         self.game = chess_game
         self.node = chess_game
         self.board = chess_game.board()
@@ -171,6 +180,9 @@ class QGame(QWidget):
                     self.user_moved(uci_move)
                 except Exception as ex:
                     print(ex)
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                    print(exc_type, fname, exc_tb.tb_lineno)
 
         super().mouseReleaseEvent(e)
         self.from_square = -1
@@ -182,16 +194,19 @@ class QGame(QWidget):
 
         # is it a legal move?
         if move in self.board.legal_moves:
-            #self.parent.add_message('You made the move: ' + self.board.san(move))
-            self.compare_user_move_with_game(move)
-            # make opponents move
-            if not self.can_move:
-                # make the next game move as well
-                game_move = self.get_next_game_move()
-                self.parent.add_message('Opponent move: ' + self.board.san(game_move))
-                self.make_move(game_move)
-                self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
-                self.timer.restart()
+            if self.board_type == 2:
+                self.compare_user_move_with_game(move)
+                # make opponents move
+                if not self.can_move:
+                    # make the next game move as well
+                    game_move = self.get_next_game_move()
+                    self.parent.add_message('Opponent move: ' + self.board.san(game_move))
+                    self.make_move(game_move)
+                    self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
+                    self.timer.restart()
+            else:
+                self.make_move(move)
+                
             self.parent.game_state_changed(self)
 
     def get_next_game_move(self):
@@ -216,7 +231,7 @@ class QGame(QWidget):
     def make_move(self, move):
         self.last_move = move
         self.board.push(move)
-        self.can_move = self.board.turn==self.winner
+        self.can_move = self.board.turn==self.winner if self.board_type == 2 else True
 
     def evaluate_moves(self, board, user_move, game_move):
         # evaluate move score
@@ -293,6 +308,10 @@ class App(QMainWindow):
 
         mm = self.menuBar()
         fm = mm.addMenu('&File')
+
+        act = QAction("New", self)
+        act.triggered.connect(self.new_game)
+        fm.addAction(act)
 
         act = QAction("Shadow..", self)
         act.triggered.connect(self.shadow)
@@ -400,6 +419,14 @@ class App(QMainWindow):
         y = int((piece.pos().y() - self.my) / self.cy)
         return chess.FILE_NAMES[x], chess.RANK_NAMES[7 - y]
 
+    def new_game(self):
+        try:
+            self.tabs.addTab(QGame(self), 'Game')
+            self.tabs.setCurrentIndex(self.tabs.count()-1)
+            self.add_message('New Game')
+        except Exception as ex:
+            print(ex)
+            
     def shadow(self):
         try:
             fileName, _ = QFileDialog.getOpenFileName(self, 'Get File', None, 'PGN (*.pgn)')

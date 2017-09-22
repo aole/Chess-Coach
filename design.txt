@@ -1,7 +1,7 @@
 Design and TODOs
 ================
 
-This: 
+This: new game option from starting position w/o engine
 
 TODO:
 	1. cache scaled images
@@ -17,9 +17,12 @@ TODO:
    17. maximize board display toggle
    18. game controls
    19. move list label expands after 4/5 lines
+   21. load and save game
+   22. show message box on errors
    
 Menu
 	File
+		New
 		Shadow...
 		Board from FEN...
 		Analyze position
