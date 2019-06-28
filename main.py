@@ -3,13 +3,16 @@ Requires python-chess
 
 """
 
+import traceback
 import sys
 import os
 
 from threading import Thread
+import chess
+import chess.engine
 import chess.pgn
 import chess.polyglot
-import chess.uci
+#import chess.uci
 from PyQt5.QtCore import Qt, QTime, QTimer, QRectF
 from PyQt5.QtGui import QPixmap, QPainter, QImage
 from PyQt5.QtWidgets import QApplication, QWidget, QAction, QMainWindow, QVBoxLayout, QHBoxLayout
@@ -179,10 +182,7 @@ class QGame(QWidget):
                 try:
                     self.user_moved(uci_move)
                 except Exception as ex:
-                    print(ex)
-                    exc_type, exc_obj, exc_tb = sys.exc_info()
-                    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-                    print(exc_type, fname, exc_tb.tb_lineno)
+                    print(traceback.format_exc())
 
         super().mouseReleaseEvent(e)
         self.from_square = -1
@@ -271,9 +271,9 @@ class App(QMainWindow):
         self.thread.start()
 
         self.add_message('initializing engine...')
-        self.engine = chess.uci.popen_engine("stockfish")
-        self.info_handler = chess.uci.InfoHandler()
-        self.engine.info_handlers.append(self.info_handler)
+        self.engine = chess.engine.SimpleEngine.popen_uci("stockfish")
+        #self.info_handler = chess.uci.InfoHandler()
+        #self.engine.info_handlers.append(self.info_handler)
         self.engine_busy = False
 
         self.add_message('Ready')
@@ -287,7 +287,7 @@ class App(QMainWindow):
         game = chess.pgn.read_game(opening_file)
         while game is not None:
             chess_board = game.board()
-            line = chess_board.variation_san(game.main_line())
+            line = chess_board.variation_san(game.mainline_moves())
             black_player_name = game.headers['Black']
             name = (' (' + black_player_name + ')') if black_player_name != '?' else ''
             self.openings[line] = game.headers['White'] + name
@@ -300,7 +300,7 @@ class App(QMainWindow):
         return ''
 
     def is_book_move(self, board, move):
-        return any(move==x.move() for x in self.book.find_all(board))
+        return any(move==x.move for x in self.book.find_all(board))
 
     def init_ui(self):
         self.statusBar()
@@ -438,9 +438,15 @@ class App(QMainWindow):
     def populate_game_list_from_pgn(self, file_name):
         self.pgn_file = open(file_name)
         self.games_list.clear()
-        for offset, header in chess.pgn.scan_headers(self.pgn_file):
+        while True:
+            offset = self.pgn_file.tell()
+            header = chess.pgn.read_headers(self.pgn_file)
+            if header is None:
+                break
+            
             game = GameListItem(offset, header)
             self.games_list.addItem(game)
+            
         self.update()
 
     def on_list_dbl_click(self, selected_item):
@@ -471,14 +477,24 @@ class App(QMainWindow):
         # evaluate move score
         while self.engine_busy:
             pass
+            
+        moves_score = {}
         self.engine_busy = True
-        self.engine.setoption({"MultiPV":len(moves_list)})
+        
+        print("Evaluating ...", moves_list)
+        info = self.engine.analyse(board, chess.engine.Limit(time=1), multipv=len(moves_list), root_moves=moves_list)
+        print("... Done!")
+        
+        
+        print("Score:", len(info))
+        '''
+        self.engine.configure({"MultiPV":len(moves_list)})
         self.engine.position(board)
         self.engine.go(movetime=1000, searchmoves=moves_list)
 
-        moves_score = {}
         for i in range(1, len(self.info_handler.info['pv'])+1):
             moves_score[self.info_handler.info['pv'][i][0]]=self.info_handler.info['score'][i][0]
+        '''
         self.engine_busy = False
         return moves_score
 
