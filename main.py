@@ -243,7 +243,7 @@ class QGame(QWidget):
 
     def evaluate(self, board, move):
         # evaluate move score
-        evaluation = self.parent.evaluate_board(board)
+        evaluation = self.parent.evaluate_board(board)[0]
         self.parent.add_message('Position Evaluation ('+move+') '+str(evaluation))
 
 class GameListItem(QListWidgetItem):
@@ -254,8 +254,8 @@ class GameListItem(QListWidgetItem):
 
 class App(QMainWindow):
     # board dimension in pixels
-    bpx = 1000
-    bpy = 1000
+    bpx = 600
+    bpy = 600
 
     def __init__(self):
         super().__init__()
@@ -272,8 +272,6 @@ class App(QMainWindow):
 
         self.add_message('initializing engine...')
         self.engine = chess.engine.SimpleEngine.popen_uci("stockfish")
-        #self.info_handler = chess.uci.InfoHandler()
-        #self.engine.info_handlers.append(self.info_handler)
         self.engine_busy = False
 
         self.add_message('Ready')
@@ -382,17 +380,16 @@ class App(QMainWindow):
     def analyze(self):
         tab = self.tabs.currentWidget()
         if isinstance(tab, QGame):
-            self.eval_msg = QListWidgetItem('Analyze Position:')
-            self.add_message(self.eval_msg)
             board_copy = tab.board.copy()
             self.thread = Thread(target=self.analyze_board, args=(board_copy,))
             self.thread.start()
 
     def analyze_board(self, board):
-        msg = str(self.evaluate_board(board))
-        msg = '('+msg+') '+board.variation_san(self.info_handler.info['pv'][1])
-        self.eval_msg.setText('Analyze Position: '+msg)
-        self.msg_list.repaint()
+        self.eval_msg = QListWidgetItem('Analyzing Position...')
+        self.add_message(self.eval_msg)
+        msg = self.evaluate_board(board)
+        self.eval_msg = QListWidgetItem('... ('+str(msg[0])+') '+board.variation_san(msg[1]))
+        self.add_message(self.eval_msg)
 
     def tick(self):
         tab = self.tabs.currentWidget()
@@ -403,7 +400,6 @@ class App(QMainWindow):
             seconds = seconds % 60
             hours = minutes/60.0
             minutes = minutes%60
-            #msg = "{:02d}:{:02d}:{:02d}".format(hours, minutes, seconds)
             msg = "%02d:%02d:%02d" % (hours, minutes, seconds)
             self.statusBar().showMessage(msg)
         except Exception as ex:
@@ -462,16 +458,14 @@ class App(QMainWindow):
         #self.msg_list.addItem(msg)
         self.msg_list.insertItem(0, msg)
 
-    def evaluate_board(self, board):
+    def evaluate_board(self, board, time=1):
         # evaluate move score
         while self.engine_busy:
             pass
         self.engine_busy = True
-        self.engine.setoption({"MultiPV":1})
-        self.engine.position(board)
-        self.engine.go(movetime=1000)
+        info = self.engine.analyse(board, chess.engine.Limit(time=time))
         self.engine_busy = False
-        return self.info_handler.info["score"][1][0]
+        return info['score'].relative.score(mate_score=100000), info['pv']
 
     def evaluate_moves(self, board, moves_list):
         # evaluate move score
@@ -481,20 +475,10 @@ class App(QMainWindow):
         moves_score = {}
         self.engine_busy = True
         
-        print("Evaluating ...", moves_list)
         info = self.engine.analyse(board, chess.engine.Limit(time=1), multipv=len(moves_list), root_moves=moves_list)
-        print("... Done!")
-        
-        
-        print("Score:", len(info))
-        '''
-        self.engine.configure({"MultiPV":len(moves_list)})
-        self.engine.position(board)
-        self.engine.go(movetime=1000, searchmoves=moves_list)
-
-        for i in range(1, len(self.info_handler.info['pv'])+1):
-            moves_score[self.info_handler.info['pv'][i][0]]=self.info_handler.info['score'][i][0]
-        '''
+        for i in range(len(info)):
+            moves_score[info[i]['pv'][0]] = info[i]['score'].relative.score(mate_score=100000)
+            
         self.engine_busy = False
         return moves_score
 
