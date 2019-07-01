@@ -118,12 +118,12 @@ class QGame(QWidget):
             painter.drawRect(QRectF(x, y, self.cx, self.cy))
         try:
             # paint pieces
-            self.display_board(self.board, self.flip_board)
+            self.paint_pieces(self.board, self.flip_board)
         except Exception as ex:
             print(ex)
         painter.end()
 
-    def display_board(self, board, flip):
+    def paint_pieces(self, board, flip):
         painter = QPainter(self)
         font = painter.font()
         font.setPixelSize(min(self.cx-4, self.cy-4))
@@ -230,7 +230,7 @@ class QGame(QWidget):
             self.parent.add_message(move_text+' (Book move '+opening_name+')')
         if move!=game_move and not is_book_move:
             board_copy = self.board.copy()
-            self.thread = Thread(target=self.evaluate_moves, args=(board_copy, move, game_move))
+            self.thread = Thread(target=self.compare_moves, args=(board_copy, move, game_move))
             self.thread.start()
         self.make_move(game_move)
 
@@ -239,7 +239,7 @@ class QGame(QWidget):
         self.board.push(move)
         self.can_move = self.board.turn==self.winner if self.board_type == 2 else True
 
-    def evaluate_moves(self, board, user_move, game_move):
+    def compare_moves(self, board, user_move, game_move):
         # evaluate move score
         evaluation = self.parent.evaluate_moves(board, [user_move, game_move])
         score_diff = evaluation[user_move] - evaluation[game_move]
@@ -253,10 +253,11 @@ class QGame(QWidget):
         self.parent.add_message('Position Evaluation ('+move+') '+str(evaluation))
 
 class GameListItem(QListWidgetItem):
-    def __init__(self, pgn_offset, pgn_header):
-        super().__init__(pgn_header['White'] + ' vs ' + pgn_header['Black'] + ' [' + pgn_header['Result'] + ']')
+    def __init__(self, pgn_offset, pgn_header, index=''):
+        super().__init__((str(index) + '. ' if index!='' else '') + '[' + pgn_header['Result'] + '] ' + pgn_header['White'] + ' vs ' + pgn_header['Black'])
         self.offset = pgn_offset
         self.header = pgn_header
+        self.index = index
 
 class App(QMainWindow):
     # board dimension in pixels
@@ -265,16 +266,18 @@ class App(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.init_ui()
-
+        
         self.openings = {}
+        self.init_openings()
+        
+        self.init_ui()
 
         self.static_board = chess.Board()
         self.add_message('initializing opening book...')
         self.book = chess.polyglot.open_reader("book.bin")
 
-        self.thread = Thread(target=self.init_openings)
-        self.thread.start()
+        #self.thread = Thread(target=self.init_openings)
+        #self.thread.start()
 
         self.add_message('initializing engine...')
         self.engine = chess.engine.SimpleEngine.popen_uci("stockfish")
@@ -328,6 +331,8 @@ class App(QMainWindow):
         self.games_list = QListWidget()
         self.games_list.itemDoubleClicked.connect(self.on_list_dbl_click)
 
+        self.opening_list = QListWidget()
+        
         # tabs
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -335,9 +340,12 @@ class App(QMainWindow):
         self.tabs.currentChanged.connect(self.tab_changed)
         self.tabs.tabCloseRequested.connect(self.close_tab)
 
-        self.tabs.addTab(self.games_list, "List")
+        self.tabs.addTab(self.games_list, "Games")
         self.populate_game_list_from_pgn('games.pgn')
 
+        self.tabs.addTab(self.opening_list, "Openings")
+        self.populate_opening_list()
+        
         main_widget = QWidget()
         main_layout = QHBoxLayout(main_widget)
 
@@ -437,17 +445,24 @@ class App(QMainWindow):
         except Exception as ex:
             print(ex)
 
+    def populate_opening_list(self):
+        self.opening_list.clear()
+        for k, v in self.openings.items():
+            self.opening_list.addItem(v+' ('+k+')')
+            
     def populate_game_list_from_pgn(self, file_name):
         self.pgn_file = open(file_name)
         self.games_list.clear()
+        index = 1
         while True:
             offset = self.pgn_file.tell()
             header = chess.pgn.read_headers(self.pgn_file)
             if header is None:
                 break
             
-            game = GameListItem(offset, header)
+            game = GameListItem(offset, header, index)
             self.games_list.addItem(game)
+            index += 1
             
         self.update()
 
@@ -483,6 +498,7 @@ class App(QMainWindow):
         
         info = self.engine.analyse(board, chess.engine.Limit(time=1), multipv=len(moves_list), root_moves=moves_list)
         for i in range(len(info)):
+            #print(i, info[i])
             moves_score[info[i]['pv'][0]] = info[i]['score'].relative.score(mate_score=100000)
             
         self.engine_busy = False
@@ -490,6 +506,7 @@ class App(QMainWindow):
 
     def closeEvent(self, e):
         print('... quitting!')
+        self.book.close()
         self.engine.quit()
 
 if __name__ == '__main__':
