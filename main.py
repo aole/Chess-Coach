@@ -12,9 +12,11 @@ import chess
 import chess.engine
 import chess.pgn
 import chess.polyglot
+import chess.svg
+
 #import chess.uci
-from PyQt5.QtCore import Qt, QTime, QTimer, QRectF
-from PyQt5.QtGui import QPixmap, QPainter, QImage
+from PyQt5.QtCore import Qt, QTime, QTimer, QRectF, QSize
+from PyQt5.QtGui import QPixmap, QPainter, QImage, QIcon
 from PyQt5.QtWidgets import QApplication, QWidget, QAction, QMainWindow, QVBoxLayout, QHBoxLayout
 from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetItem, QLabel
 
@@ -123,6 +125,10 @@ class QGame(QWidget):
 
     def display_board(self, board, flip):
         painter = QPainter(self)
+        font = painter.font()
+        font.setPixelSize(min(self.cx-4, self.cy-4))
+        painter.setFont(font)
+
         for s in chess.SQUARES:
             p = board.piece_at(s)
             if p:
@@ -136,7 +142,7 @@ class QGame(QWidget):
                 # center images
                 if show_ascii:
                     sym = p.unicode_symbol()
-                    painter.drawText(x,y,self.cx,self.cy,Qt.AlignCenter, sym)
+                    painter.drawText(x, y, self.cx, self.cy, Qt.AlignCenter, sym)
                 else:
                     piece_index = PIECE_IMAGE_INDEX[p.piece_type] + (0 if p.color else 6)
                     img = QImage.scaled(self.piece_map[piece_index], self.cx, self.cy, Qt.KeepAspectRatio)
