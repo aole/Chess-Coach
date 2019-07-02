@@ -82,9 +82,10 @@ class QGame(QWidget):
         self.can_move = self.board.turn==self.winner
         if not self.can_move:
             game_move = self.get_next_game_move()
-            self.parent.add_message('Opponent move: ' + self.board.san(game_move))
-            self.make_move(game_move)
-            parent.game_state_changed(self)
+            if game_move:
+                self.parent.add_message('Opponent move: ' + self.board.san(game_move))
+                self.make_move(game_move)
+                parent.game_state_changed(self)
 
         self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
 
@@ -206,6 +207,9 @@ class QGame(QWidget):
                 if not self.can_move:
                     # make the next game move as well
                     game_move = self.get_next_game_move()
+                    if game_move is None:
+                        return
+                        
                     self.parent.add_message('Opponent move: ' + self.board.san(game_move))
                     self.make_move(game_move)
                     self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
@@ -216,12 +220,18 @@ class QGame(QWidget):
             self.parent.game_state_changed(self)
 
     def get_next_game_move(self):
+        if len(self.node.variations)<1:
+            return None
+            
         next_node = self.node.variations[0]
         self.node = next_node
         return next_node.move
 
     def compare_user_move_with_game(self, move):
         game_move = self.get_next_game_move()
+        if game_move is None:
+            return
+            
         move_text = self.board.san(move)
         self.parent.add_message('Your move: '+move_text+', Game move: '+self.board.san(game_move))
         is_book_move = self.parent.is_book_move(self.board, move)
@@ -259,6 +269,12 @@ class GameListItem(QListWidgetItem):
         self.header = pgn_header
         self.index = index
 
+class OpeningListItem(QListWidgetItem):
+    def __init__(self, key, value, index=''):
+        super().__init__((str(index) + '. ' if index!='' else '') + value[0]+' ('+key+')')
+        self.key = key
+        self.value = value
+
 class App(QMainWindow):
     # board dimension in pixels
     bpx = 600
@@ -268,7 +284,6 @@ class App(QMainWindow):
         super().__init__()
         
         self.openings = {}
-        self.init_openings()
         
         self.init_ui()
 
@@ -276,8 +291,8 @@ class App(QMainWindow):
         self.add_message('initializing opening book...')
         self.book = chess.polyglot.open_reader("book.bin")
 
-        #self.thread = Thread(target=self.init_openings)
-        #self.thread.start()
+        self.thread = Thread(target=self.init_openings)
+        self.thread.start()
 
         self.add_message('initializing engine...')
         self.engine = chess.engine.SimpleEngine.popen_uci("stockfish")
@@ -297,13 +312,14 @@ class App(QMainWindow):
             line = chess_board.variation_san(game.mainline_moves())
             black_player_name = game.headers['Black']
             name = (' (' + black_player_name + ')') if black_player_name != '?' else ''
-            self.openings[line] = game.headers['White'] + name
+            self.openings[line] = (game.headers['White'] + name, game.mainline_moves())
             game = chess.pgn.read_game(opening_file)
+        self.populate_opening_list()
 
     def get_opening_name(self, board):
         san = self.static_board.variation_san(board.move_stack)
         if san in self.openings:
-            return '- '+self.openings[san]
+            return '- '+self.openings[san][0]
         return ''
 
     def is_book_move(self, board, move):
@@ -332,6 +348,7 @@ class App(QMainWindow):
         self.games_list.itemDoubleClicked.connect(self.on_list_dbl_click)
 
         self.opening_list = QListWidget()
+        self.opening_list.itemDoubleClicked.connect(self.on_opening_list_dbl_click)
         
         # tabs
         self.tabs = QTabWidget()
@@ -344,7 +361,6 @@ class App(QMainWindow):
         self.populate_game_list_from_pgn('games.pgn')
 
         self.tabs.addTab(self.opening_list, "Openings")
-        self.populate_opening_list()
         
         main_widget = QWidget()
         main_layout = QHBoxLayout(main_widget)
@@ -447,8 +463,17 @@ class App(QMainWindow):
 
     def populate_opening_list(self):
         self.opening_list.clear()
+        grouping = ''
+        index = 1
         for k, v in self.openings.items():
-            self.opening_list.addItem(v+' ('+k+')')
+            c = k[:6].strip()
+            if grouping != c:
+                grouping = c
+                self.opening_list.addItem('==== '+grouping+' ====')
+            
+            opening = OpeningListItem(k, v, index)
+            self.opening_list.addItem(opening)
+            index += 1
             
     def populate_game_list_from_pgn(self, file_name):
         self.pgn_file = open(file_name)
@@ -475,6 +500,15 @@ class App(QMainWindow):
         self.tabs.setCurrentIndex(self.tabs.count()-1)
         self.add_message('Shadowing game: '+selected_item.text())
 
+    def on_opening_list_dbl_click(self, selected_item):
+        selected_game = chess.pgn.Game()
+        selected_game.add_line(selected_item.value[1])
+        tab_caption = selected_item.text()[:7]+'...'
+        self.tabs.addTab(QGame(self, selected_game, selected_item.text()), tab_caption)
+        self.add_message('Opening: '+selected_item.text())
+        self.tabs.setCurrentIndex(self.tabs.count()-1)
+        self.add_message('Opening: '+selected_item.text())
+        
     def add_message(self, msg):
         #self.msg_list.addItem(msg)
         self.msg_list.insertItem(0, msg)
@@ -498,7 +532,6 @@ class App(QMainWindow):
         
         info = self.engine.analyse(board, chess.engine.Limit(time=1), multipv=len(moves_list), root_moves=moves_list)
         for i in range(len(info)):
-            #print(i, info[i])
             moves_score[info[i]['pv'][0]] = info[i]['score'].relative.score(mate_score=100000)
             
         self.engine_busy = False
