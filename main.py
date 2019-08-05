@@ -25,107 +25,38 @@ PIECE_IMAGE_INDEX = [0, 5, 3, 2, 4, 1, 0]
 show_ascii = False
 show_ascii = True
 
-class QGame(QWidget):
-    # widget type
-    # SHADOW = range(2)
-
-    from_square = -1
-    mouseMovePos = None
-    offset_x = offset_y = 0
-    can_move = False
-    winner = True
-    thread = None
-    total_score = 0
-
-    def __init__(self, parent, chess_game=None, caption=None):
-        super().__init__(parent)
-
-        if caption==None:
-            caption = 'Game Editor'
-        self.label_caption = QLabel(caption, self)
-
-        self.width = self.width()
-        self.height = self.height() - self.label_caption.height()
-        self.cx = self.width / 8
-        self.cy = self.height / 8
-
-        self.parent = parent
+class QBoard(QWidget):
+    def __init__(self):
+        super().__init__()
+        
+        self.board = None
+        self.flipped = False
+        self.from_square = -1
+        self.can_move = False
+        
         if show_ascii:
             self.board_map = QPixmap('test.jpg')
         else:
             self.board_map = QPixmap('chess_board.png')
-        temp_map = QImage('chess_pieces.png')
-        pcx = temp_map.width() / 6
-        pcy = temp_map.height() / 2
-        self.piece_map = []
-        for y in range(2):
-            for x in range(6):
-                self.piece_map.append(temp_map.copy(int(x * pcx), int(y * pcy), int(pcx), int(pcy)))
-
-        if chess_game==None:
-            chess_game = chess.pgn.Game()
-            self.board_type = 1
-        else:
-            self.board_type = 2
             
-        self.game = chess_game
-        self.node = chess_game
-        self.board = chess_game.board()
-        self.last_move = None
-
-        result = chess_game.headers['Result']
-        self.flip_board = False
-        if result =='0-1':
-            self.winner = False
-            self.flip_board = True
-
-        self.can_move = self.board.turn==self.winner
-        if not self.can_move:
-            game_move = self.get_next_game_move()
-            if game_move:
-                self.parent.add_message('Opponent move: ' + self.board.san(game_move))
-                self.make_move(game_move)
-                parent.game_state_changed(self)
-
-        self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
-
-        self.timer = QTime()
-        self.timer.start()
-
-    # moves = game.main_line()
-    # print(self.board.variation_san(moves))
-
-    def elapsed(self):
-        return self.timer.elapsed()
-
-    def resizeEvent(self, e):
-        self.width = e.size().width()
-        self.height = e.size().height() - self.label_caption.height()
-        self.cx = self.width / 8
-        self.cy = self.height / 8
-
+    def setCanMove(self, value):
+        self.can_move = value
+        
+    def setBoard(self, board, flipped):
+        self.board = board
+        self.flipped = flipped
+        
     def paintEvent(self, e):
         painter = QPainter()
         painter.begin(self)
-        # paint board
-        painter.drawPixmap(0, self.label_caption.height(), self.width, self.height, self.board_map)
-        # paint last move
-        if self.last_move:
-            x = self.cx * ((7 - chess.square_file(self.last_move.from_square)) if self.flip_board else chess.square_file(self.last_move.from_square))
-            y = self.cy * (chess.square_rank(self.last_move.from_square) if self.flip_board else (7 - chess.square_rank(self.last_move.from_square))) + self.label_caption.height()
-            painter.drawRect(QRectF(x, y, self.cx, self.cy))
-            x = self.cx * ((7 - chess.square_file(self.last_move.to_square)) if self.flip_board else chess.square_file(self.last_move.to_square))
-            y = self.cy * (chess.square_rank(self.last_move.to_square) if self.flip_board else (7 - chess.square_rank(self.last_move.to_square))) + self.label_caption.height()
-            painter.drawRect(QRectF(x, y, self.cx, self.cy))
-        try:
-            # paint pieces
-            self.paint_pieces(self.board, self.flip_board)
-        except Exception as ex:
-            print(ex)
+        
+        painter.drawPixmap(0, 0, self.width(), self.height(), self.board_map)
+        if self.board:
+            self.paint_pieces(painter, self.board, self.flipped)
+            
         painter.end()
-
-    def paint_pieces(self, board, flip):
-        painter = QPainter(self)
+        
+    def paint_pieces(self, painter, board, flip):
         font = painter.font()
         font.setPixelSize(min(self.cx-4, self.cy-4))
         painter.setFont(font)
@@ -135,10 +66,10 @@ class QGame(QWidget):
             if p:
                 if s == self.from_square and self.mouseMovePos:
                     x = self.mouseMovePos.x() - self.offset_x
-                    y = self.mouseMovePos.y() - self.offset_y + self.label_caption.height()
+                    y = self.mouseMovePos.y() - self.offset_y
                 else:
                     x = self.cx * ((7 - chess.square_file(s)) if flip else chess.square_file(s))
-                    y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s))) + self.label_caption.height()
+                    y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s)))
 
                 # center images
                 if show_ascii:
@@ -157,11 +88,11 @@ class QGame(QWidget):
 
             x = int(e.pos().x() / self.cx)
             self.offset_x = e.pos().x() - x * self.cx
-            x = 7-x if self.flip_board else x
+            x = 7-x if self.flipped else x
 
-            y = int((e.pos().y() - self.label_caption.height()) / self.cy)
+            y = int((e.pos().y()) / self.cy)
             self.offset_y = e.pos().y() - y * self.cy
-            y = y if self.flip_board else 7 - y
+            y = y if self.flipped else 7 - y
 
             self.from_square = (y * 8 + x) if (0 <= y < 8 and 0 <= x < 8) else -1
 
@@ -177,9 +108,9 @@ class QGame(QWidget):
     def mouseReleaseEvent(self, e):
         if self.from_square >= 0:
             x = int(e.pos().x() / self.cx)
-            x = 7-x if self.flip_board else x
-            y = int(8 - (e.pos().y() - self.label_caption.height()) / self.cy)
-            y = 7 - y if self.flip_board else y
+            x = 7-x if self.flipped else x
+            y = int(8 - (e.pos().y()) / self.cy)
+            y = 7 - y if self.flipped else y
             if 0 <= y < 8 and 0 <= x < 8:
                 uci_move = chess.FILE_NAMES[chess.square_file(self.from_square)] + \
                            chess.RANK_NAMES[chess.square_rank(self.from_square)] + \
@@ -194,6 +125,10 @@ class QGame(QWidget):
         super().mouseReleaseEvent(e)
         self.from_square = -1
         self.update()
+
+    def resizeEvent(self, e):
+        self.cx = self.width() / 8
+        self.cy = self.height() / 8
 
     # process user move
     def user_moved(self, uci_move):
@@ -219,6 +154,101 @@ class QGame(QWidget):
                 
             self.parent.game_state_changed(self)
 
+class QGame(QWidget):
+    # widget type
+    # SHADOW = range(2)
+
+    mouseMovePos = None
+    offset_x = offset_y = 0
+    winner = True
+    thread = None
+    total_score = 0
+
+    def __init__(self, parent, chess_game=None, caption=None):
+        super().__init__(parent)
+
+        layout = QVBoxLayout()
+        
+        if caption==None:
+            caption = 'Game Editor'
+        self.label_caption = QLabel(caption)
+        layout.addWidget(self.label_caption)
+
+        self.boardWidget = QBoard()
+        layout.addWidget(self.boardWidget, 1)
+        
+        self.setLayout(layout)
+        
+        self.parent = parent
+        temp_map = QImage('chess_pieces.png')
+        pcx = temp_map.width() / 6
+        pcy = temp_map.height() / 2
+        self.piece_map = []
+        for y in range(2):
+            for x in range(6):
+                self.piece_map.append(temp_map.copy(int(x * pcx), int(y * pcy), int(pcx), int(pcy)))
+
+        if chess_game==None:
+            chess_game = chess.pgn.Game()
+            self.board_type = 1
+        else:
+            self.board_type = 2
+            
+        self.game = chess_game
+        self.node = chess_game
+        self.board = chess_game.board()
+        self.last_move = None
+
+        result = chess_game.headers['Result']
+        self.flip_board = False
+        if result =='0-1':
+            self.winner = False
+            self.flip_board = True
+
+        self.boardWidget.setBoard(self.board, self.flip_board)
+        
+        self.can_move = self.board.turn==self.winner
+        self.boardWidget.setCanMove(self.can_move)
+        
+        if not self.can_move:
+            game_move = self.get_next_game_move()
+            if game_move:
+                self.parent.add_message('Opponent move: ' + self.board.san(game_move))
+                self.make_move(game_move)
+                parent.game_state_changed(self)
+
+        self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
+
+        self.timer = QTime()
+        self.timer.start()
+
+    # moves = game.main_line()
+    # print(self.board.variation_san(moves))
+
+    def elapsed(self):
+        return self.timer.elapsed()
+
+    '''
+    def paintEvent(self, e):
+        painter = QPainter()
+        painter.begin(self)
+        # paint board
+        painter.drawPixmap(0, self.label_caption.height(), self.width, self.height, self.board_map)
+        # paint last move
+        if self.last_move:
+            x = self.cx * ((7 - chess.square_file(self.last_move.from_square)) if self.flip_board else chess.square_file(self.last_move.from_square))
+            y = self.cy * (chess.square_rank(self.last_move.from_square) if self.flip_board else (7 - chess.square_rank(self.last_move.from_square))) + self.label_caption.height()
+            painter.drawRect(QRectF(x, y, self.cx, self.cy))
+            x = self.cx * ((7 - chess.square_file(self.last_move.to_square)) if self.flip_board else chess.square_file(self.last_move.to_square))
+            y = self.cy * (chess.square_rank(self.last_move.to_square) if self.flip_board else (7 - chess.square_rank(self.last_move.to_square))) + self.label_caption.height()
+            painter.drawRect(QRectF(x, y, self.cx, self.cy))
+        try:
+            # paint pieces
+            self.paint_pieces(self.board, self.flip_board)
+        except Exception as ex:
+            print(ex)
+        painter.end()
+    '''
     def get_next_game_move(self):
         if len(self.node.variations)<1:
             return None
