@@ -6,6 +6,7 @@ Requires python-chess
 import traceback
 import sys
 import os
+import random
 
 from threading import Thread
 import chess
@@ -23,7 +24,7 @@ from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetIte
 PIECE_IMAGE_INDEX = [0, 5, 3, 2, 4, 1, 0]
 
 show_ascii = False
-show_ascii = True
+#show_ascii = True
 
 class QBoard(QWidget):
     def __init__(self, game):
@@ -33,6 +34,8 @@ class QBoard(QWidget):
         self.flipped = False
         self.from_square = -1
         self.game = game
+        self.mousePressListeners = []
+        self.moveListeners = []
         
         if show_ascii:
             self.board_map = QPixmap('test.jpg')
@@ -46,7 +49,13 @@ class QBoard(QWidget):
                 for x in range(6):
                     self.piece_map.append(temp_map.copy(int(x * pcx), int(y * pcy), int(pcx), int(pcy)))
             
-    def setBoard(self, board, flipped):
+    def addMousePressListener(self, listener):
+        self.mousePressListeners.append(listener)
+        
+    def addMoveListener(self, listener):
+        self.moveListeners.append(listener)
+        
+    def setBoard(self, board, flipped=False):
         self.board = board
         self.flipped = flipped
         
@@ -105,6 +114,9 @@ class QBoard(QWidget):
 
             self.from_square = (y * 8 + x) if (0 <= y < 8 and 0 <= x < 8) else -1
 
+        for l in self.mousePressListeners:
+            l.mousePressed(self.from_square)
+            
         super().mousePressEvent(e)
         self.update()
 
@@ -127,7 +139,8 @@ class QBoard(QWidget):
                            chess.RANK_NAMES[y]
                 # user made a move
                 try:
-                    self.game.user_moved(uci_move)
+                    for l in self.moveListeners:
+                        l.userMoved(uci_move)
                 except Exception as ex:
                     print(traceback.format_exc())
 
@@ -139,7 +152,96 @@ class QBoard(QWidget):
         self.cx = self.width() / 8
         self.cy = self.height() / 8
 
-class QGame(QWidget):
+class TabEmpty(QWidget):
+    def __init__(self, parent, caption):
+        super().__init__(parent)
+        
+        self.can_move = True
+        
+        self.parent = parent
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        if caption==None:
+            caption = 'Game Editor'
+        self.label_caption = QLabel(caption)
+        layout.addWidget(self.label_caption)
+
+        self.boardWidget = QBoard(self)
+        layout.addWidget(self.boardWidget, 1)
+    
+    def get_last_move(self):
+        return None
+        
+class CoordLearn(TabEmpty):
+    def __init__(self, parent, caption, gametype, color):
+        super().__init__(parent, caption)
+        
+        self.gametype = gametype
+        self.color = color
+        
+        self.boardWidget.addMousePressListener(self)
+        self.boardWidget.setBoard(chess.Board())
+        self.boardWidget.flipped = color==1
+        
+        self.parent.add_message('**** Click anywhere on the board to start.')
+        
+        self.timer = QTime()
+        self.timerStarted = False
+
+    def mousePressed(self, square):
+        if not self.timerStarted:
+            self.timer.start()
+            self.timerStarted = True
+            
+            self.score = 0
+        
+            self.rand8 = random.randrange(8)
+            self.rand64 = random.randrange(64)
+            
+            if self.color == 2:
+                self.boardWidget.flipped = random.randrange(2)
+        else:
+            if self.gametype == 0:
+                if self.rand8 == square >> 3:
+                    self.score += 1
+                    self.rand8 = random.randrange(8)
+                    if self.color == 2:
+                        self.boardWidget.flipped = random.randrange(2)
+                else:
+                    self.parent.add_message('X: ' + chess.RANK_NAMES[square >> 3])
+                    
+            elif self.gametype == 1:
+                if self.rand8 == square & 7:
+                    self.score += 1
+                    self.rand8 = random.randrange(8)
+                    if self.color == 2:
+                        self.boardWidget.flipped = random.randrange(2)
+                else:
+                    self.parent.add_message('X: ' + chess.FILE_NAMES[square & 7])
+                    
+            elif self.gametype == 2:
+                if chess.SQUARES[self.rand64] == square:
+                    self.score += 1
+                    self.rand64 = random.randrange(64)
+                    if self.color == 2:
+                        self.boardWidget.flipped = random.randrange(2)
+                else:
+                    self.parent.add_message('X: ' + chess.SQUARE_NAMES[square])
+            
+        self.parent.add_message('Score: ' + str(self.score))
+            
+        if self.gametype == 0: # RANK
+            self.parent.add_message('**** Find Rank: ' + chess.RANK_NAMES[self.rand8])
+        elif self.gametype == 1: # File
+            self.parent.add_message('**** Find File: ' + chess.FILE_NAMES[self.rand8])
+        elif self.gametype == 2: # Square
+            self.parent.add_message('**** Find Square: ' + chess.SQUARE_NAMES[self.rand64])
+        
+    def elapsed(self):
+        return self.timer.elapsed()
+        
+class QGame(TabEmpty):
     # widget type
     # SHADOW = range(2)
 
@@ -149,23 +251,10 @@ class QGame(QWidget):
     thread = None
     total_score = 0
 
-    def __init__(self, parent, chess_game=None, caption=None):
-        super().__init__(parent)
+    def __init__(self, parent, chess_game=None, caption = None):
+        super().__init__(parent, caption)
 
-        layout = QVBoxLayout()
-        
-        if caption==None:
-            caption = 'Game Editor'
-        self.label_caption = QLabel(caption)
-        layout.addWidget(self.label_caption)
-
-        self.boardWidget = QBoard(self)
-        layout.addWidget(self.boardWidget, 1)
-        
-        self.setLayout(layout)
-        
-        self.parent = parent
-
+        self.boardWidget.addMoveListener(self)
         if chess_game==None:
             chess_game = chess.pgn.Game()
             self.board_type = 1
@@ -282,7 +371,7 @@ class QGame(QWidget):
         self.parent.add_message('Position Evaluation ('+move+') '+str(evaluation))
 
     # process user move
-    def user_moved(self, uci_move):
+    def userMoved(self, uci_move):
         move = chess.Move.from_uci(uci_move)
 
         # is it a legal move?
@@ -324,6 +413,13 @@ class TacticsListItem(QListWidgetItem):
         self.offset = pgn_offset
         self.header = pgn_header
         self.index = index
+
+class CoordListItem(QListWidgetItem):
+    # Caption, File/Rank/Position (0/1/2), White/Black/Both (0/1/2)
+    def __init__(self, caption, gametype, color):
+        super().__init__(caption)
+        self.gametype = gametype
+        self.color = color
 
 class App(QMainWindow):
     # board dimension in pixels
@@ -403,6 +499,9 @@ class App(QMainWindow):
         self.tactics_list = QListWidget()
         self.tactics_list.itemDoubleClicked.connect(self.on_tactics_list_dbl_click)
 
+        self.coord_learn = QListWidget()
+        self.coord_learn.itemDoubleClicked.connect(self.on_coord_learn_dbl_click)
+
         # tabs
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -417,6 +516,9 @@ class App(QMainWindow):
         
         self.tabs.addTab(self.tactics_list, "Tactics")
         self.populate_tactics_list_from_pgn('tactics.pgn')
+
+        self.tabs.addTab(self.coord_learn, "Coordinates")
+        self.populate_coord_learn_list()
 
         main_widget = QWidget()
         main_layout = QHBoxLayout(main_widget)
@@ -456,7 +558,7 @@ class App(QMainWindow):
 
     def close_tab(self, index):
         tab = self.tabs.currentWidget()
-        if isinstance(tab, QGame):
+        if isinstance(tab, TabEmpty):
             self.tabs.removeTab(index)
 
     def game_state_changed(self, qgame):
@@ -563,38 +665,59 @@ class App(QMainWindow):
             
         self.update()
 
+    def populate_coord_learn_list(self):
+        self.coord_learn.addItem(CoordListItem('Rank (white)', 0, 0))
+        self.coord_learn.addItem(CoordListItem('File (white)', 1, 0))
+        self.coord_learn.addItem(CoordListItem('Position (white)', 2, 0))
+        self.coord_learn.addItem(CoordListItem('Rank (black)', 0, 1))
+        self.coord_learn.addItem(CoordListItem('File (black)', 1, 1))
+        self.coord_learn.addItem(CoordListItem('Position (black)', 2, 1))
+        self.coord_learn.addItem(CoordListItem('Random (both)', 2, 2))
+        self.update()
+        
     # Game list Double Clicked
     def on_list_dbl_click(self, selected_item):
         self.pgn_file.seek(selected_item.offset)
         selected_game = chess.pgn.read_game(self.pgn_file)
+        self.static_board = selected_game.board()
+        
         tab_caption = selected_item.text()[:7]+'...'
         self.tabs.addTab(QGame(self, selected_game, selected_item.text()), tab_caption)
         # open the latest tab
         self.tabs.setCurrentIndex(self.tabs.count()-1)
         self.add_message('Shadowing game: '+selected_item.text())
-        self.static_board = selected_game.board()
 
     # Tactics list Double Clicked
     def on_tactics_list_dbl_click(self, selected_item):
         self.tactics_file.seek(selected_item.offset)
         selected_game = chess.pgn.read_game(self.tactics_file)
+        self.static_board = selected_game.board()
+        
         tab_caption = selected_item.text()[:7]+'...'
         self.tabs.addTab(QGame(self, selected_game, selected_item.text()), tab_caption)
         # open the latest tab
         self.tabs.setCurrentIndex(self.tabs.count()-1)
         self.add_message('Tactics: '+selected_item.text())
-        self.static_board = selected_game.board()
 
     # Opening list Double Clicked
     def on_opening_list_dbl_click(self, selected_item):
         selected_game = chess.pgn.Game()
+        self.static_board = selected_game.board()
         selected_game.add_line(selected_item.value[1])
+        
         tab_caption = selected_item.text()[:7]+'...'
         self.tabs.addTab(QGame(self, selected_game, selected_item.text()), tab_caption)
         self.add_message('Opening: '+selected_item.text())
         self.tabs.setCurrentIndex(self.tabs.count()-1)
         self.add_message('Opening: '+selected_item.text())
-        self.static_board = selected_game.board()
+        
+    # Opening list Double Clicked
+    def on_coord_learn_dbl_click(self, selected_item):
+        self.static_board = None
+        tab_caption = selected_item.text()
+        self.tabs.addTab(CoordLearn(self, selected_item.text(), selected_item.gametype, selected_item.color), tab_caption)
+        self.tabs.setCurrentIndex(self.tabs.count()-1)
+        self.add_message('Learn: '+selected_item.text())
         
     def add_message(self, msg):
         #self.msg_list.addItem(msg)
