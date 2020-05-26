@@ -26,22 +26,26 @@ show_ascii = False
 show_ascii = True
 
 class QBoard(QWidget):
-    def __init__(self):
+    def __init__(self, game):
         super().__init__()
         
         self.board = None
         self.flipped = False
         self.from_square = -1
-        self.can_move = False
+        self.game = game
         
         if show_ascii:
             self.board_map = QPixmap('test.jpg')
         else:
             self.board_map = QPixmap('chess_board.png')
+            temp_map = QImage('chess_pieces.png')
+            pcx = temp_map.width() / 6
+            pcy = temp_map.height() / 2
+            self.piece_map = []
+            for y in range(2):
+                for x in range(6):
+                    self.piece_map.append(temp_map.copy(int(x * pcx), int(y * pcy), int(pcx), int(pcy)))
             
-    def setCanMove(self, value):
-        self.can_move = value
-        
     def setBoard(self, board, flipped):
         self.board = board
         self.flipped = flipped
@@ -61,16 +65,18 @@ class QBoard(QWidget):
         font.setPixelSize(min(self.cx-4, self.cy-4))
         painter.setFont(font)
 
+        last_move = self.game.get_last_move()
+        
         for s in chess.SQUARES:
+            x = self.cx * ((7 - chess.square_file(s)) if flip else chess.square_file(s))
+            y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s)))
+            
             p = board.piece_at(s)
             if p:
                 if s == self.from_square and self.mouseMovePos:
                     x = self.mouseMovePos.x() - self.offset_x
                     y = self.mouseMovePos.y() - self.offset_y
-                else:
-                    x = self.cx * ((7 - chess.square_file(s)) if flip else chess.square_file(s))
-                    y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s)))
-
+                    
                 # center images
                 if show_ascii:
                     sym = p.unicode_symbol()
@@ -81,9 +87,12 @@ class QBoard(QWidget):
                     offset_x = (self.cx-img.width())/2
                     offset_y = (self.cy-img.height())/2
                     painter.drawImage(x+offset_x, y+offset_y, img)
-
+        
+            if last_move and (last_move.from_square == s or last_move.to_square == s):
+                painter.drawRect(x, y, self.cx, self.cy)
+                        
     def mousePressEvent(self, e):
-        if self.can_move:
+        if self.game.can_move:
             self.mouseMovePos = e.pos()
 
             x = int(e.pos().x() / self.cx)
@@ -118,7 +127,7 @@ class QBoard(QWidget):
                            chess.RANK_NAMES[y]
                 # user made a move
                 try:
-                    self.user_moved(uci_move)
+                    self.game.user_moved(uci_move)
                 except Exception as ex:
                     print(traceback.format_exc())
 
@@ -129,30 +138,6 @@ class QBoard(QWidget):
     def resizeEvent(self, e):
         self.cx = self.width() / 8
         self.cy = self.height() / 8
-
-    # process user move
-    def user_moved(self, uci_move):
-        move = chess.Move.from_uci(uci_move)
-
-        # is it a legal move?
-        if move in self.board.legal_moves:
-            if self.board_type == 2:
-                self.compare_user_move_with_game(move)
-                # make opponents move
-                if not self.can_move:
-                    # make the next game move as well
-                    game_move = self.get_next_game_move()
-                    if game_move is None:
-                        return
-                        
-                    self.parent.add_message('Opponent move: ' + self.board.san(game_move))
-                    self.make_move(game_move)
-                    self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
-                    self.timer.restart()
-            else:
-                self.make_move(move)
-                
-            self.parent.game_state_changed(self)
 
 class QGame(QWidget):
     # widget type
@@ -174,27 +159,21 @@ class QGame(QWidget):
         self.label_caption = QLabel(caption)
         layout.addWidget(self.label_caption)
 
-        self.boardWidget = QBoard()
+        self.boardWidget = QBoard(self)
         layout.addWidget(self.boardWidget, 1)
         
         self.setLayout(layout)
         
         self.parent = parent
-        temp_map = QImage('chess_pieces.png')
-        pcx = temp_map.width() / 6
-        pcy = temp_map.height() / 2
-        self.piece_map = []
-        for y in range(2):
-            for x in range(6):
-                self.piece_map.append(temp_map.copy(int(x * pcx), int(y * pcy), int(pcx), int(pcy)))
 
         if chess_game==None:
             chess_game = chess.pgn.Game()
             self.board_type = 1
+            self.boardWidget.board_type = 1
         else:
             self.board_type = 2
+            self.boardWidget.board_type = 2
             
-        self.game = chess_game
         self.node = chess_game
         self.board = chess_game.board()
         self.last_move = None
@@ -208,7 +187,6 @@ class QGame(QWidget):
         self.boardWidget.setBoard(self.board, self.flip_board)
         
         self.can_move = self.board.turn==self.winner
-        self.boardWidget.setCanMove(self.can_move)
         
         if not self.can_move:
             game_move = self.get_next_game_move()
@@ -257,6 +235,15 @@ class QGame(QWidget):
         self.node = next_node
         return next_node.move
 
+    def get_last_move(self):
+        lm = None
+        try:
+            lm = self.board.peek()
+        except:
+            pass
+            
+        return lm
+        
     def compare_user_move_with_game(self, move):
         game_move = self.get_next_game_move()
         if game_move is None:
@@ -279,6 +266,8 @@ class QGame(QWidget):
         self.board.push(move)
         self.can_move = self.board.turn==self.winner if self.board_type == 2 else True
 
+        self.parent.game_state_changed(self)
+
     def compare_moves(self, board, user_move, game_move):
         # evaluate move score
         evaluation = self.parent.evaluate_moves(board, [user_move, game_move])
@@ -292,9 +281,33 @@ class QGame(QWidget):
         evaluation = self.parent.evaluate_board(board)[0]
         self.parent.add_message('Position Evaluation ('+move+') '+str(evaluation))
 
+    # process user move
+    def user_moved(self, uci_move):
+        move = chess.Move.from_uci(uci_move)
+
+        # is it a legal move?
+        if move in self.board.legal_moves:
+            if self.board_type == 2:
+                self.compare_user_move_with_game(move)
+                # make opponents move
+                if not self.can_move:
+                    # make the next game move as well
+                    game_move = self.get_next_game_move()
+                    if game_move is None:
+                        return
+                        
+                    self.parent.add_message('Opponent move: ' + self.board.san(game_move))
+                    self.make_move(game_move)
+                    self.parent.add_message('**** Make move for '+('white' if self.board.turn else 'black'))
+                    self.timer.restart()
+            else:
+                self.make_move(move)
+                
 class GameListItem(QListWidgetItem):
     def __init__(self, pgn_offset, pgn_header, index=''):
-        super().__init__((str(index) + '. ' if index!='' else '') + '[' + pgn_header['Result'] + '] ' + pgn_header['White'] + ' vs ' + pgn_header['Black'])
+        welo = pgn_header['WhiteElo']
+        belo = pgn_header['BlackElo']
+        super().__init__((str(index) + '. ' if index!='' else '') + '[' + pgn_header['Result'] + '] ' + pgn_header['White'] + ' ' + welo + ' vs ' + pgn_header['Black'] + ' ' + belo)
         self.offset = pgn_offset
         self.header = pgn_header
         self.index = index
@@ -304,6 +317,13 @@ class OpeningListItem(QListWidgetItem):
         super().__init__((str(index) + '. ' if index!='' else '') + value[0]+' ('+key+')')
         self.key = key
         self.value = value
+
+class TacticsListItem(QListWidgetItem):
+    def __init__(self, pgn_offset, pgn_header, index=''):
+        super().__init__((str(index) + '. ' if index!='' else '') + '[' + pgn_header['Result'] + '] ' + pgn_header['White'] + ' vs ' + pgn_header['Black'])
+        self.offset = pgn_offset
+        self.header = pgn_header
+        self.index = index
 
 class App(QMainWindow):
     # board dimension in pixels
@@ -380,6 +400,9 @@ class App(QMainWindow):
         self.opening_list = QListWidget()
         self.opening_list.itemDoubleClicked.connect(self.on_opening_list_dbl_click)
         
+        self.tactics_list = QListWidget()
+        self.tactics_list.itemDoubleClicked.connect(self.on_tactics_list_dbl_click)
+
         # tabs
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -392,6 +415,9 @@ class App(QMainWindow):
 
         self.tabs.addTab(self.opening_list, "Openings")
         
+        self.tabs.addTab(self.tactics_list, "Tactics")
+        self.populate_tactics_list_from_pgn('tactics.pgn')
+
         main_widget = QWidget()
         main_layout = QHBoxLayout(main_widget)
 
@@ -521,6 +547,23 @@ class App(QMainWindow):
             
         self.update()
 
+    def populate_tactics_list_from_pgn(self, file_name):
+        self.tactics_file = open(file_name)
+        self.tactics_list.clear()
+        index = 1
+        while True:
+            offset = self.tactics_file.tell()
+            header = chess.pgn.read_headers(self.tactics_file)
+            if header is None:
+                break
+            
+            game = TacticsListItem(offset, header, index)
+            self.tactics_list.addItem(game)
+            index += 1
+            
+        self.update()
+
+    # Game list Double Clicked
     def on_list_dbl_click(self, selected_item):
         self.pgn_file.seek(selected_item.offset)
         selected_game = chess.pgn.read_game(self.pgn_file)
@@ -529,7 +572,20 @@ class App(QMainWindow):
         # open the latest tab
         self.tabs.setCurrentIndex(self.tabs.count()-1)
         self.add_message('Shadowing game: '+selected_item.text())
+        self.static_board = selected_game.board()
 
+    # Tactics list Double Clicked
+    def on_tactics_list_dbl_click(self, selected_item):
+        self.tactics_file.seek(selected_item.offset)
+        selected_game = chess.pgn.read_game(self.tactics_file)
+        tab_caption = selected_item.text()[:7]+'...'
+        self.tabs.addTab(QGame(self, selected_game, selected_item.text()), tab_caption)
+        # open the latest tab
+        self.tabs.setCurrentIndex(self.tabs.count()-1)
+        self.add_message('Tactics: '+selected_item.text())
+        self.static_board = selected_game.board()
+
+    # Opening list Double Clicked
     def on_opening_list_dbl_click(self, selected_item):
         selected_game = chess.pgn.Game()
         selected_game.add_line(selected_item.value[1])
@@ -538,6 +594,7 @@ class App(QMainWindow):
         self.add_message('Opening: '+selected_item.text())
         self.tabs.setCurrentIndex(self.tabs.count()-1)
         self.add_message('Opening: '+selected_item.text())
+        self.static_board = selected_game.board()
         
     def add_message(self, msg):
         #self.msg_list.addItem(msg)
