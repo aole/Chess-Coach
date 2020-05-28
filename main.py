@@ -9,7 +9,9 @@ import os
 import random
 
 from threading import Thread
+from _thread import *
 from qboard import QBoard
+from server import Server
 
 import chess
 import chess.engine
@@ -21,7 +23,7 @@ import chess.svg
 from PyQt5.QtCore import Qt, QTime, QTimer, QRectF, QSize
 from PyQt5.QtGui import QPixmap, QPainter, QImage, QIcon
 from PyQt5.QtWidgets import QApplication, QWidget, QAction, QMainWindow, QVBoxLayout, QHBoxLayout
-from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetItem, QLabel
+from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetItem, QLabel, QInputDialog, QLineEdit
 
 class TabEmpty(QWidget):
     def __init__(self, parent, caption):
@@ -364,6 +366,16 @@ class App(QMainWindow):
         act = QAction("Analyze", self)
         act.triggered.connect(self.analyze)
         fm.addAction(act)
+        
+        mnuSever = mm.addMenu('&Server')
+        
+        act = QAction("&Create Server...", self)
+        act.triggered.connect(self.createServer)
+        mnuSever.addAction(act)
+
+        act = QAction("&Join Server...", self)
+        act.triggered.connect(self.joinServer)
+        mnuSever.addAction(act)
 
         self.games_list = QListWidget()
         self.games_list.itemDoubleClicked.connect(self.on_list_dbl_click)
@@ -627,6 +639,23 @@ class App(QMainWindow):
         self.book.close()
         self.engine.quit()
 
+    def createServer(self):
+        ip_port, do = QInputDialog.getText(self, 'Create Server', 'IP:Port', QLineEdit.Normal, 'localhost:5555')
+        if do:
+            ip, port = ip_port.split(':')
+            start_new_thread(self.threaded_server, (ip, int(port)))
+        
+    def threaded_server(self, ip, port):
+        print('Creating server', ip, port)
+        server = Server(ip, port)
+        res = server.connect()
+        print(res[1])
+        if res[0]:
+            server.listen()
+        
+    def joinServer(self):
+        print('Join server')
+        
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = App()
