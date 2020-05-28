@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import QTabWidget, QFileDialog, QListWidget, QListWidgetIte
 PIECE_IMAGE_INDEX = [0, 5, 3, 2, 4, 1, 0]
 
 show_ascii = False
-#show_ascii = True
+show_ascii = True
 
 class QBoard(QWidget):
     def __init__(self, game):
@@ -36,6 +36,7 @@ class QBoard(QWidget):
         self.game = game
         self.mousePressListeners = []
         self.moveListeners = []
+        self.text = None
         
         if show_ascii:
             self.board_map = QPixmap('test.jpg')
@@ -63,17 +64,20 @@ class QBoard(QWidget):
         painter = QPainter()
         painter.begin(self)
         
-        painter.drawPixmap(0, 0, self.width(), self.height(), self.board_map)
-        if self.board:
-            self.paint_pieces(painter, self.board, self.flipped)
-            
-        painter.end()
-        
-    def paint_pieces(self, painter, board, flip):
         font = painter.font()
         font.setPixelSize(min(self.cx-4, self.cy-4))
         painter.setFont(font)
 
+        painter.drawPixmap(0, 0, self.width(), self.height(), self.board_map)
+        if self.board:
+            self.paint_pieces(painter, self.board, self.flipped)
+            
+        if self.text:
+            painter.drawText(self.width()/2-65, self.height()/2-65, 130, 130, Qt.AlignCenter, self.text)
+            
+        painter.end()
+        
+    def paint_pieces(self, painter, board, flip):
         last_move = self.game.get_last_move()
         
         for s in chess.SQUARES:
@@ -152,6 +156,9 @@ class QBoard(QWidget):
         self.cx = self.width() / 8
         self.cy = self.height() / 8
 
+    def setText(self, text = None):
+        self.text = text
+        
 class TabEmpty(QWidget):
     def __init__(self, parent, caption):
         super().__init__(parent)
@@ -233,10 +240,13 @@ class CoordLearn(TabEmpty):
             
         if self.gametype == 0: # RANK
             self.parent.add_message('**** Find Rank: ' + chess.RANK_NAMES[self.rand8])
+            self.boardWidget.setText(chess.RANK_NAMES[self.rand8])
         elif self.gametype == 1: # File
             self.parent.add_message('**** Find File: ' + chess.FILE_NAMES[self.rand8])
+            self.boardWidget.setText(chess.FILE_NAMES[self.rand8])
         elif self.gametype == 2: # Square
             self.parent.add_message('**** Find Square: ' + chess.SQUARE_NAMES[self.rand64])
+            self.boardWidget.setText(chess.SQUARE_NAMES[self.rand64])
         
     def elapsed(self):
         return self.timer.elapsed()
@@ -421,10 +431,11 @@ class CoordListItem(QListWidgetItem):
         self.gametype = gametype
         self.color = color
 
+# app dimension in pixels
+DEFAULT_WIDTH  = 1200
+DEFAULT_HEIGHT = 800
+    
 class App(QMainWindow):
-    # board dimension in pixels
-    bpx = 600
-    bpy = 600
 
     def __init__(self):
         super().__init__()
@@ -547,7 +558,7 @@ class App(QMainWindow):
 
         self.setCentralWidget(main_widget)
 
-        self.resize(self.bpx, self.bpy)
+        self.resize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
         self.setWindowTitle('Chess Coach')
         self.show()
 
