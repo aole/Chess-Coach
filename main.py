@@ -110,13 +110,14 @@ class QBoard(QWidget):
     def mousePressEvent(self, e):
         if self.game.can_move:
             self.mouseMovePos = e.pos()
+            piece_size = min(self.width(), self.height())/8
 
-            x = int(e.pos().x() / self.cx)
-            self.offset_x = e.pos().x() - x * self.cx
+            x = int(e.pos().x() / piece_size)
+            self.offset_x = e.pos().x() - x * piece_size
             x = 7-x if self.flipped else x
 
-            y = int((e.pos().y()) / self.cy)
-            self.offset_y = e.pos().y() - y * self.cy
+            y = int((e.pos().y()) / piece_size)
+            self.offset_y = e.pos().y() - y * piece_size
             y = y if self.flipped else 7 - y
 
             self.from_square = (y * 8 + x) if (0 <= y < 8 and 0 <= x < 8) else -1
@@ -135,9 +136,10 @@ class QBoard(QWidget):
 
     def mouseReleaseEvent(self, e):
         if self.from_square >= 0:
-            x = int(e.pos().x() / self.cx)
+            piece_size = min(self.width(), self.height())/8
+            x = int(e.pos().x() / piece_size)
             x = 7-x if self.flipped else x
-            y = int(8 - (e.pos().y()) / self.cy)
+            y = int(8 - (e.pos().y()) / piece_size)
             y = 7 - y if self.flipped else y
             if 0 <= y < 8 and 0 <= x < 8:
                 uci_move = chess.FILE_NAMES[chess.square_file(self.from_square)] + \
@@ -155,10 +157,6 @@ class QBoard(QWidget):
         self.from_square = -1
         self.update()
 
-    def resizeEvent(self, e):
-        self.cx = min(self.width() / 8, self.height() / 8)
-        self.cy = self.cx
-    
     def setText(self, text = None):
         self.text = text
         
