@@ -64,25 +64,28 @@ class QBoard(QWidget):
         painter = QPainter()
         painter.begin(self)
         
+        board_size = min(self.width(), self.height())
+        piece_size = board_size/8
+        
         font = painter.font()
-        font.setPixelSize(min(self.cx-4, self.cy-4))
+        font.setPixelSize(piece_size-4)
         painter.setFont(font)
 
-        painter.drawPixmap(0, 0, self.width(), self.height(), self.board_map)
+        painter.drawPixmap(0, 0, board_size, board_size, self.board_map)
         if self.board:
-            self.paint_pieces(painter, self.board, self.flipped)
+            self.paint_pieces(painter, self.board, self.flipped, piece_size)
             
         if self.text:
-            painter.drawText(self.width()/2-65, self.height()/2-65, 130, 130, Qt.AlignCenter, self.text)
+            painter.drawText(board_size/2-65, board_size/2-65, 130, 130, Qt.AlignCenter, self.text)
             
         painter.end()
         
-    def paint_pieces(self, painter, board, flip):
+    def paint_pieces(self, painter, board, flip, piece_size):
         last_move = self.game.get_last_move()
         
         for s in chess.SQUARES:
-            x = self.cx * ((7 - chess.square_file(s)) if flip else chess.square_file(s))
-            y = self.cy * (chess.square_rank(s) if flip else (7 - chess.square_rank(s)))
+            x = piece_size * ((7 - chess.square_file(s)) if flip else chess.square_file(s))
+            y = piece_size * (chess.square_rank(s) if flip else (7 - chess.square_rank(s)))
             
             p = board.piece_at(s)
             if p:
@@ -93,16 +96,16 @@ class QBoard(QWidget):
                 # center images
                 if show_ascii:
                     sym = p.unicode_symbol()
-                    painter.drawText(x, y, self.cx, self.cy, Qt.AlignCenter, sym)
+                    painter.drawText(x, y, piece_size, piece_size, Qt.AlignCenter, sym)
                 else:
                     piece_index = PIECE_IMAGE_INDEX[p.piece_type] + (0 if p.color else 6)
-                    img = QImage.scaled(self.piece_map[piece_index], self.cx, self.cy, Qt.KeepAspectRatio)
-                    offset_x = (self.cx-img.width())/2
-                    offset_y = (self.cy-img.height())/2
+                    img = QImage.scaled(self.piece_map[piece_index], piece_size, piece_size, Qt.KeepAspectRatio)
+                    offset_x = (piece_size-img.width())/2
+                    offset_y = (piece_size-img.height())/2
                     painter.drawImage(x+offset_x, y+offset_y, img)
         
             if last_move and (last_move.from_square == s or last_move.to_square == s):
-                painter.drawRect(x, y, self.cx, self.cy)
+                painter.drawRect(x, y, piece_size, piece_size)
                         
     def mousePressEvent(self, e):
         if self.game.can_move:
@@ -153,9 +156,9 @@ class QBoard(QWidget):
         self.update()
 
     def resizeEvent(self, e):
-        self.cx = self.width() / 8
-        self.cy = self.height() / 8
-
+        self.cx = min(self.width() / 8, self.height() / 8)
+        self.cy = self.cx
+    
     def setText(self, text = None):
         self.text = text
         
