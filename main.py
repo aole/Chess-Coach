@@ -11,6 +11,8 @@ import random
 from threading import Thread
 from _thread import *
 from qboard import QBoard
+
+from client import Client
 from server import Server
 
 import chess
@@ -29,24 +31,56 @@ class TabEmpty(QWidget):
     def __init__(self, parent, caption):
         super().__init__(parent)
         
-        self.can_move = True
-        
         self.parent = parent
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+        
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
         
         if caption==None:
-            caption = 'Game Editor'
+            caption = 'Empty Tab'
         self.label_caption = QLabel(caption)
-        layout.addWidget(self.label_caption)
+        self.layout.addWidget(self.label_caption)
 
+    def closing(self):
+        pass
+        
+class TabGame(TabEmpty):
+    def __init__(self, parent, caption):
+        super().__init__(parent, caption)
+        
+        self.can_move = True
+        
         self.boardWidget = QBoard(self)
-        layout.addWidget(self.boardWidget, 1)
+        self.layout.addWidget(self.boardWidget, 1)
     
     def get_last_move(self):
         return None
         
-class CoordLearn(TabEmpty):
+class TabServer(TabEmpty):
+    def __init__(self, parent, caption):
+        super().__init__(parent, caption)
+        
+        self.list = QListWidget()
+        self.layout.addWidget(self.list)
+        
+        self.client = None
+        self.server = None
+        
+    def addUser(self, username):
+        self.list.addItem(QListWidgetItem(username))
+    
+    def clearUsers(self):
+        self.list.clear()
+        
+    def closing(self):
+        if self.client:
+            self.client.stop()
+            self.client = None
+        if self.server:
+            self.server.stop()
+            self.server = None
+            
+class CoordLearn(TabGame):
     def __init__(self, parent, caption, gametype, color):
         super().__init__(parent, caption)
         
@@ -117,7 +151,7 @@ class CoordLearn(TabEmpty):
     def elapsed(self):
         return self.timer.elapsed()
         
-class QGame(TabEmpty):
+class QGame(TabGame):
     # widget type
     # SHADOW = range(2)
 
@@ -446,6 +480,7 @@ class App(QMainWindow):
     def close_tab(self, index):
         tab = self.tabs.currentWidget()
         if isinstance(tab, TabEmpty):
+            tab.closing()
             self.tabs.removeTab(index)
 
     def game_state_changed(self, qgame):
@@ -643,19 +678,46 @@ class App(QMainWindow):
         ip_port, do = QInputDialog.getText(self, 'Create Server', 'IP:Port', QLineEdit.Normal, 'localhost:5555')
         if do:
             ip, port = ip_port.split(':')
-            start_new_thread(self.threaded_server, (ip, int(port)))
+            
+            print('Creating server', ip_port)
+            server = Server(ip, int(port))
+            res = server.connect()
+            print(res[1])
+            if res[0]:
+                start_new_thread(self.threaded_server, (server,))
+            
+                defuser = 'User'+str(random.randint(1000, 9999))
+                username, do = QInputDialog.getText(self, 'Join Server as', 'Username', QLineEdit.Normal, defuser)
+                if do:
+                    print('Connecting as', username)
+                    tab_caption = 'Server @'+ip_port
+                    tab = TabServer(self, tab_caption)
+                    tab.server = server
+                    tab.client = Client(ip, int(port), username, tab)
+                    self.tabs.addTab(tab, tab_caption)
+                    self.tabs.setCurrentIndex(self.tabs.count()-1)
         
-    def threaded_server(self, ip, port):
-        print('Creating server', ip, port)
-        server = Server(ip, port)
-        res = server.connect()
-        print(res[1])
-        if res[0]:
-            server.listen()
+    def threaded_server(self, server):
+        server.listen()
         
     def joinServer(self):
-        print('Join server')
+        ip_port, do = QInputDialog.getText(self, 'Join Server', 'IP:Port', QLineEdit.Normal, 'localhost:5555')
+        if do:
+            ip, port = ip_port.split(':')
         
+            defuser = 'User'+str(random.randint(1000, 9999))
+            username, do = QInputDialog.getText(self, 'Join Server as', 'Username', QLineEdit.Normal, defuser)
+            if do:
+                print('Connecting as', username)
+                tab_caption = 'Joined @'+ip_port
+                tab = TabServer(self, tab_caption)
+                tab.client = Client(ip, int(port), username, tab)
+                if tab.client.connected:
+                    self.tabs.addTab(tab, tab_caption)
+                    self.tabs.setCurrentIndex(self.tabs.count()-1)
+                else:
+                    print('Connection Failed!')
+                    
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = App()
